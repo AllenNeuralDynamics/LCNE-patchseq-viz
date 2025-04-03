@@ -5,14 +5,18 @@ To start the app, run:
 panel serve panel_nwb_viz.py --dev --allow-websocket-origin=codeocean.allenneuraldynamics.org
 """
 
-import matplotlib.pyplot as plt
 import numpy as np
 import panel as pn
 import param
+from bokeh.plotting import figure
+from bokeh.layouts import column as bokeh_column
+from bokeh.models import BoxZoomTool
+
 
 from LCNE_patchseq_analysis.data_util.metadata import load_ephys_metadata
 from LCNE_patchseq_analysis.data_util.nwb import PatchSeqNWB
 from LCNE_patchseq_analysis.pipeline_util.s3 import get_public_url_sweep
+
 
 class PatchSeqNWBApp(param.Parameterized):
     """
@@ -45,26 +49,44 @@ class PatchSeqNWBApp(param.Parameterized):
         # Create the cell selector panel once.
         self.cell_selector_panel = self.create_cell_selector_panel()
 
+
     @staticmethod
-    def update_plot(raw, sweep):
-        """
-        Extracts a slice of data from the NWB file and returns a matplotlib figure.
-        """
+    def update_bokeh(raw, sweep):
         trace = raw.get_raw_trace(sweep)
         stimulus = raw.get_stimulus(sweep)
-        time = np.arange(len(trace)) * raw.dt_ms
+        time = raw.get_time(sweep)
+        
+        box_zoom_x = BoxZoomTool(dimensions="width")
+        
+        # Create the voltage trace plot
+        voltage_plot = figure(
+            title=f"Full raw traces - Sweep number {sweep}",
+            height=300,
+            tools=['hover', box_zoom_x, 'box_zoom', 'wheel_zoom', 'reset', 'pan'],
+            active_drag=box_zoom_x,
+            x_range=(0, time[-1]),
+            y_axis_label='Vm (mV)',
+            sizing_mode='stretch_width'
+        )
+        voltage_plot.line(time, trace, line_width=1.5, color='navy')
+        
+        # Create the stimulus plot
+        stim_plot = figure(
+            height=150,
+            tools=['hover', box_zoom_x, 'box_zoom', 'wheel_zoom', 'reset', 'pan'],
+            active_drag=box_zoom_x,
+            x_range=voltage_plot.x_range,  # Link x ranges
+            x_axis_label='Time (ms)',
+            y_axis_label='I (pA)',
+            sizing_mode='stretch_width'
+        )
+        stim_plot.line(time, stimulus, line_width=1.5, color='firebrick')
+        
+        # Stack the plots vertically using bokeh's column layout
+        layout = bokeh_column(voltage_plot, stim_plot,
+                              sizing_mode='stretch_width', margin=(50, 0, 0, 0))
+        return layout
 
-        fig, ax = plt.subplots(2, 1, figsize=(6, 4), gridspec_kw={"height_ratios": [3, 1]})
-        ax[0].plot(time, trace)
-        ax[0].set_title(f"Sweep number {sweep}")
-        ax[0].set(ylabel="Vm (mV)")
-
-        ax[1].plot(time, stimulus)
-        ax[1].set(xlabel="Time (ms)", ylabel="I (pA)")
-        ax[0].label_outer()
-
-        plt.close(fig)  # Prevent duplicate display in Panel.
-        return fig
 
     @staticmethod
     def highlight_selected_rows(row, highlight_subset, color, fields=None):
@@ -113,14 +135,12 @@ class PatchSeqNWBApp(param.Parameterized):
             )
         
         # Bind the plotting function to the data holder's sweep number
-        plot_panel = pn.bind(
-            PatchSeqNWBApp.update_plot, 
+        bokeh_panel = pn.bind(
+            PatchSeqNWBApp.update_bokeh, 
             raw=raw_this_cell, 
-            sweep=self.data_holder.param.sweep_number_selected
+            sweep=self.data_holder.param.sweep_number_selected,
         )
-        
-        # Create panes for S3 images
-        
+                
         # Bind the S3 URL retrieval to the data holder's sweep number
         def get_s3_images(sweep_number):
             s3_url = get_public_url_sweep(ephys_roi_id, sweep_number)
@@ -135,8 +155,11 @@ class PatchSeqNWBApp(param.Parameterized):
             get_s3_images, 
             sweep_number=self.data_holder.param.sweep_number_selected
         )
-        sweep_pane = pn.Column(s3_image_panel, pn.pane.Matplotlib(
-            plot_panel, dpi=400, width=800, height=400))
+        sweep_pane = pn.Column(
+            s3_image_panel,
+            bokeh_panel,
+            sizing_mode='stretch_width',
+            )
 
         # Build a Tabulator for sweep metadata.
         tab_sweeps = pn.widgets.Tabulator(
@@ -226,6 +249,8 @@ class PatchSeqNWBApp(param.Parameterized):
                 pn.pane.Markdown(f"# {ephys_roi_id}"),
                 pn.pane.Markdown("Select a sweep from the table to view its data."),
                 pn.Column(sweep_msg_panel, sweep_pane),
+                width=700,
+                margin=(0, 100, 0, 0),  # top, right, bottom, left margins
             ),
             pn.Column(
                 pn.pane.Markdown("## Sweep metadata"),
