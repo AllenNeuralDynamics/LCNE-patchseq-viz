@@ -22,6 +22,7 @@ class PatchSeqNWBApp(param.Parameterized):
 
     class DataHolder(param.Parameterized):
         ephys_roi_id = param.String(default="")
+        sweep_number_selected = param.Integer(default=0)
 
     def __init__(self):
         # Holder for currently selected cell ID.
@@ -84,7 +85,7 @@ class PatchSeqNWBApp(param.Parameterized):
     def get_qc_message(sweep, df_sweeps):
         """Return a QC message based on sweep data."""
         if sweep not in df_sweeps["sweep_number"].values:
-            return "<span style='color:red;'>Sweep number not found in the jsons!</span>"
+            return "<span style='color:red;'>Invalid sweep!</span>"
         if sweep in df_sweeps.query("passed != passed")["sweep_number"].values:
             return "<span style='background:salmon;'>Sweep terminated by the experimenter!</span>"
         if sweep in df_sweeps.query("passed == False")["sweep_number"].values:
@@ -103,37 +104,43 @@ class PatchSeqNWBApp(param.Parameterized):
 
         # Load the NWB file for the selected cell.
         raw_this_cell = PatchSeqNWB(ephys_roi_id=ephys_roi_id)
+        df_sweeps_valid = raw_this_cell.df_sweeps.query("passed == passed")
 
-        # Create a slider widget to navigate sweeps.
-        slider = pn.widgets.IntSlider(
-            name="Sweep number", start=0, end=raw_this_cell.n_sweeps - 1, value=0
-        )
+        # Set initial sweep number to first valid sweep
+        if self.data_holder.sweep_number_selected == 0:
+            self.data_holder.sweep_number_selected = (
+                df_sweeps_valid.iloc[0]["sweep_number"]
+            )
         
-        # Bind the slider to the plotting function.
+        # Bind the plotting function to the data holder's sweep number
         plot_panel = pn.bind(
-            PatchSeqNWBApp.update_plot, raw=raw_this_cell, sweep=slider.param.value
+            PatchSeqNWBApp.update_plot, 
+            raw=raw_this_cell, 
+            sweep=self.data_holder.param.sweep_number_selected
         )
         
         # Create panes for S3 images
         
-        # Bind the S3 URL retrieval to the slider value
+        # Bind the S3 URL retrieval to the data holder's sweep number
         def get_s3_images(sweep_number):
             s3_url = get_public_url_sweep(ephys_roi_id, sweep_number)
             images = []
             if "sweep" in s3_url:
-                images.append(pn.pane.PNG(s3_url["sweep"], width=600, height=400))
+                images.append(pn.pane.PNG(s3_url["sweep"], width=800, height=400))
             if "spikes" in s3_url:
-                images.append(pn.pane.PNG(s3_url["spikes"], width=600, height=400))
+                images.append(pn.pane.PNG(s3_url["spikes"], width=800, height=400))
             return pn.Column(*images) if images else pn.pane.Markdown("No S3 images available")
         
-        s3_image_panel = pn.bind(get_s3_images, sweep_number=slider.param.value)
-        
-        mpl_pane = pn.Column(s3_image_panel, pn.pane.Matplotlib(plot_panel, dpi=400, width=600, height=400) )
+        s3_image_panel = pn.bind(
+            get_s3_images, 
+            sweep_number=self.data_holder.param.sweep_number_selected
+        )
+        sweep_pane = pn.Column(s3_image_panel, pn.pane.Matplotlib(
+            plot_panel, dpi=400, width=800, height=400))
 
-        
         # Build a Tabulator for sweep metadata.
         tab_sweeps = pn.widgets.Tabulator(
-            raw_this_cell.df_sweeps[
+            df_sweeps_valid[
                 [
                     "sweep_number",
                     "stimulus_code_ext",
@@ -147,7 +154,7 @@ class PatchSeqNWBApp(param.Parameterized):
                     "reasons",
                     "stimulus_code",
                 ]
-            ],
+            ],  # Only show valid sweeps (passed is not NaN)
             hidden_columns=["stimulus_code"],
             selectable=1,
             disabled=True,  # Not editable
@@ -195,31 +202,21 @@ class PatchSeqNWBApp(param.Parameterized):
             axis=1,
         )
 
-        # --- Two-Way Synchronization between Slider and Table ---
-        def update_slider_from_table(event):
-            """Update slider when table selection changes."""
+        # --- Synchronize table selection with sweep number ---
+        def update_sweep_from_table(event):
+            """Update sweep number when table selection changes."""
             if event.new:
                 selected_index = event.new[0]
-                new_sweep = raw_this_cell.df_sweeps.loc[selected_index, "sweep_number"]
-                slider.value = new_sweep
+                new_sweep = df_sweeps_valid.iloc[selected_index]["sweep_number"]
+                self.data_holder.sweep_number_selected = new_sweep
 
-        tab_sweeps.param.watch(update_slider_from_table, "selection")
-
-        def update_table_selection(event):
-            """Update table selection when slider value changes."""
-            new_val = event.new
-            row_index = raw_this_cell.df_sweeps.index[
-                raw_this_cell.df_sweeps["sweep_number"] == new_val
-            ].tolist()
-            tab_sweeps.selection = row_index
-
-        slider.param.watch(update_table_selection, "value")
+        tab_sweeps.param.watch(update_sweep_from_table, "selection")
         # --- End Synchronization ---
 
         # Build a reactive QC message panel.
         sweep_msg = pn.bind(
             PatchSeqNWBApp.get_qc_message,
-            sweep=slider.param.value,
+            sweep=self.data_holder.param.sweep_number_selected,
             df_sweeps=raw_this_cell.df_sweeps,
         )
         sweep_msg_panel = pn.pane.Markdown(sweep_msg, width=600, height=30)
@@ -227,11 +224,11 @@ class PatchSeqNWBApp(param.Parameterized):
         return pn.Row(
             pn.Column(
                 pn.pane.Markdown(f"# {ephys_roi_id}"),
-                pn.pane.Markdown("Use the slider to navigate through the sweeps in the NWB file."),
-                pn.Column(slider, sweep_msg_panel, mpl_pane),
+                pn.pane.Markdown("Select a sweep from the table to view its data."),
+                pn.Column(sweep_msg_panel, sweep_pane),
             ),
             pn.Column(
-                pn.pane.Markdown("## Metadata from jsons"),
+                pn.pane.Markdown("## Sweep metadata"),
                 tab_sweeps,
             ),
         )
