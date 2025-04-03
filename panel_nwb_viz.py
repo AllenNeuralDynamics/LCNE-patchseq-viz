@@ -12,7 +12,7 @@ import param
 
 from LCNE_patchseq_analysis.data_util.metadata import load_ephys_metadata
 from LCNE_patchseq_analysis.data_util.nwb import PatchSeqNWB
-
+from LCNE_patchseq_analysis.pipeline_util.s3 import get_public_url_sweep
 
 class PatchSeqNWBApp(param.Parameterized):
     """
@@ -108,12 +108,29 @@ class PatchSeqNWBApp(param.Parameterized):
         slider = pn.widgets.IntSlider(
             name="Sweep number", start=0, end=raw_this_cell.n_sweeps - 1, value=0
         )
+        
         # Bind the slider to the plotting function.
         plot_panel = pn.bind(
             PatchSeqNWBApp.update_plot, raw=raw_this_cell, sweep=slider.param.value
         )
-        mpl_pane = pn.pane.Matplotlib(plot_panel, dpi=400, width=600, height=400)
+        
+        # Create panes for S3 images
+        
+        # Bind the S3 URL retrieval to the slider value
+        def get_s3_images(sweep_number):
+            s3_url = get_public_url_sweep(ephys_roi_id, sweep_number)
+            images = []
+            if "sweep" in s3_url:
+                images.append(pn.pane.PNG(s3_url["sweep"], width=600, height=400))
+            if "spikes" in s3_url:
+                images.append(pn.pane.PNG(s3_url["spikes"], width=600, height=400))
+            return pn.Column(*images) if images else pn.pane.Markdown("No S3 images available")
+        
+        s3_image_panel = pn.bind(get_s3_images, sweep_number=slider.param.value)
+        
+        mpl_pane = pn.Column(s3_image_panel, pn.pane.Matplotlib(plot_panel, dpi=400, width=600, height=400) )
 
+        
         # Build a Tabulator for sweep metadata.
         tab_sweeps = pn.widgets.Tabulator(
             raw_this_cell.df_sweeps[
