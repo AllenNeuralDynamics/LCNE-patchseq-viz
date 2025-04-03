@@ -146,7 +146,7 @@ class PatchSeqNWBApp(param.Parameterized):
             PatchSeqNWBApp.update_bokeh,
             raw=raw_this_cell,
             sweep=self.data_holder.param.sweep_number_selected,
-            downsample_factor=downsample_factor,
+            downsample_factor=downsample_factor.param.value_throttled,
         )
 
         # Bind the S3 URL retrieval to the data holder's sweep number
