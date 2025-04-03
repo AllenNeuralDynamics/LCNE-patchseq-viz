@@ -2,16 +2,19 @@
 Panel-based visualization tool for navigating and visualizing patch-seq NWB files.
 
 To start the app, run:
-panel serve panel_nwb_viz.py --dev --allow-websocket-origin=codeocean.allenneuraldynamics.org
+panel serve panel_nwb_viz.py --dev --allow-websocket-origin=codeocean.allenneuraldynamics.org --title "LC-NE Patch-seq Data Explorer"  #noqa: E501
 """
 
 import numpy as np
 import panel as pn
 import param
+from bokeh.io import curdoc
 from bokeh.plotting import figure
 from bokeh.layouts import column as bokeh_column
 from bokeh.models import BoxZoomTool
 
+pn.extension('tabulator')
+curdoc().title = "LC-NE Patch-seq Data Explorer"
 
 from LCNE_patchseq_analysis.data_util.metadata import load_ephys_metadata
 from LCNE_patchseq_analysis.data_util.nwb import PatchSeqNWB
