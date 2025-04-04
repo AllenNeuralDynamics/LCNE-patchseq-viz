@@ -8,6 +8,7 @@ panel serve panel_nwb_viz.py --dev --allow-websocket-origin=codeocean.allenneura
 import logging
 
 import panel as pn
+import pandas as pd
 import param
 from bokeh.io import curdoc
 from bokeh.layouts import column as bokeh_column
@@ -133,11 +134,11 @@ class PatchSeqNWBApp(param.Parameterized):
         """
         # Create dropdown widgets for selecting columns
         x_axis_select = pn.widgets.Select(
-            name='X-Axis', options=list(self.df_meta.columns),
+            name='X-Axis', options=sorted(list(self.df_meta.columns)),
             value="first_spike_AP_width @ long_square_rheo, min"
         )
         y_axis_select = pn.widgets.Select(
-            name='Y-Axis', options=list(self.df_meta.columns), value="y"
+            name='Y-Axis', options=sorted(list(self.df_meta.columns)), value="y"
         )
 
         # Function to update the scatter plot based on selected columns
@@ -151,6 +152,10 @@ class PatchSeqNWBApp(param.Parameterized):
 
             # Create ColumnDataSource from the dataframe
             source = ColumnDataSource(self.df_meta)
+            
+            # If any column is Date, convert it to datetime
+            if x_col == "Date":
+                source.data[x_col] = pd.to_datetime(source.data[x_col])
 
             # Add scatter glyph using the data source
             p.scatter(
