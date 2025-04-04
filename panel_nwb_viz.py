@@ -14,12 +14,13 @@ from bokeh.io import curdoc
 from bokeh.layouts import column as bokeh_column
 from bokeh.models import BoxZoomTool, TapTool, HoverTool
 from bokeh.plotting import figure
-from bokeh.models import ColumnDataSource
+from bokeh.models import ColumnDataSource, CategoricalColorMapper
 
 from LCNE_patchseq_analysis.data_util.metadata import load_ephys_metadata
 from LCNE_patchseq_analysis.data_util.nwb import PatchSeqNWB
 from LCNE_patchseq_analysis.efel.io import load_efel_features_from_roi
 from LCNE_patchseq_analysis.pipeline_util.s3 import get_public_url_sweep, get_public_url_cell_summary
+from LCNE_patchseq_analysis import REGION_COLOR_MAPPER
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -128,8 +129,7 @@ class PatchSeqNWBApp(param.Parameterized):
         return "<span style='background:lightgreen;'>Sweep passed QC!</span>"
     
     
-    # Function to update the scatter plot based on selected columns
-    def update_scatter_plot(self, x_col, y_col):
+    def update_scatter_plot(self, x_col, y_col, color_mapping, size_mapping):
         # Create a new figure
         p = figure(
             x_axis_label=x_col, y_axis_label=y_col,
@@ -142,14 +142,23 @@ class PatchSeqNWBApp(param.Parameterized):
         
         # If any column is Date, convert it to datetime
         if x_col == "Date":
-            source.data[x_col] = pd.to_datetime(source.data[x_col])
+            source.data[x_col] = pd.to_datetime(source.data[x_col], errors='coerce')
+
+        # Determine color mapping
+        if color_mapping == 'injection region':
+            color = {'field': color_mapping, 'transform': CategoricalColorMapper(
+                factors=list(REGION_COLOR_MAPPER.keys()),
+                palette=list(REGION_COLOR_MAPPER.values())
+            )}
+        else:
+            color = "black"
 
         # Add scatter glyph using the data source
         p.scatter(
-            x=x_col, y=y_col, source=source, size=10, color="navy", alpha=0.5
+            x=x_col, y=y_col, source=source, size=10, color=color, alpha=0.5
         )
 
-        # Flip the y-axis if y_col is "y" (depth)
+        # Flip the y-axis if y_col == "y" (depth)
         if y_col == "y":
             p.y_range.flipped = True
 
@@ -173,10 +182,13 @@ class PatchSeqNWBApp(param.Parameterized):
                 logger.info(f"Selected ephys_roi_id: {self.data_holder.ephys_roi_id}")
 
         # Attach the callback to the selection changes
-        source.selected.on_change('indices', update_ephys_roi_id)
+        if hasattr(source.selected, 'on_change'):
+            source.selected.on_change('indices', update_ephys_roi_id)
 
         # Activate the BoxZoom tool by default
-        p.toolbar.active_drag = p.select_one(BoxZoomTool)
+        box_zoom_tool = p.select_one(BoxZoomTool)
+        if box_zoom_tool:
+            p.toolbar.active_drag = box_zoom_tool
 
         # Set axis label font sizes
         p.xaxis.axis_label_text_font_size = "14pt"
@@ -196,23 +208,39 @@ class PatchSeqNWBApp(param.Parameterized):
         # Create dropdown widgets for selecting columns
         x_axis_select = pn.widgets.Select(
             name='X-Axis', options=sorted(list(self.df_meta.columns)),
-            value="first_spike_AP_width @ long_square_rheo, min"
+            value="first_spike_AP_width @ long_square_rheo, min",
+            width=200
         )
         y_axis_select = pn.widgets.Select(
-            name='Y-Axis', options=sorted(list(self.df_meta.columns)), value="y"
+            name='Y-Axis', options=sorted(list(self.df_meta.columns)), value="y",
+            width=200
+        )
+        color_mapping_select = pn.widgets.Select(
+            name='Color Mapping', options=sorted(list(self.df_meta.columns)),
+            value="injection region",
+            width=200
+        )
+        size_mapping_select = pn.widgets.Select(
+            name='Size Mapping', options=sorted(list(self.df_meta.columns)), value="Date",
+            width=200
         )
 
         # Create a reactive scatter plot that updates when axis selections change
         scatter_plot = pn.bind(
             self.update_scatter_plot,
             x_axis_select.param.value,
-            y_axis_select.param.value
+            y_axis_select.param.value,
+            color_mapping_select.param.value,
+            size_mapping_select.param.value
         )
-        return pn.Column(
-            pn.Row(x_axis_select, y_axis_select, margin=(0, 20, 20, 20)), 
+        return pn.Row(
+            pn.Column(
+                x_axis_select, y_axis_select, color_mapping_select, size_mapping_select,
+                margin=(0, 20, 20, 20)
+            ), 
             scatter_plot,
             margin=(0, 20, 20, 20),  # top, right, bottom, left margins in pixels
-            )
+        )
 
 
     def create_cell_selector_panel(self):
@@ -270,7 +298,7 @@ class PatchSeqNWBApp(param.Parameterized):
         def get_s3_cell_summary_plot(ephys_roi_id):
             s3_url = get_public_url_cell_summary(ephys_roi_id)
             if s3_url:
-                return pn.pane.PNG(s3_url, height=400)
+                return pn.pane.PNG(s3_url, sizing_mode="stretch_width")
             else:
                 return pn.pane.Markdown("No S3 cell summary plot available")
 
