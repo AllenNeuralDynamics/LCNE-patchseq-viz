@@ -128,6 +128,67 @@ class PatchSeqNWBApp(param.Parameterized):
         return "<span style='background:lightgreen;'>Sweep passed QC!</span>"
     
     
+    # Function to update the scatter plot based on selected columns
+    def update_scatter_plot(self, x_col, y_col):
+        # Create a new figure
+        p = figure(
+            x_axis_label=x_col, y_axis_label=y_col,
+            tools="pan,wheel_zoom,box_zoom,reset,tap",  # ensure tap tool is included
+            height=500,
+        )
+
+        # Create ColumnDataSource from the dataframe
+        source = ColumnDataSource(self.df_meta)
+        
+        # If any column is Date, convert it to datetime
+        if x_col == "Date":
+            source.data[x_col] = pd.to_datetime(source.data[x_col])
+
+        # Add scatter glyph using the data source
+        p.scatter(
+            x=x_col, y=y_col, source=source, size=10, color="navy", alpha=0.5
+        )
+
+        # Flip the y-axis if y_col is "y" (depth)
+        if y_col == "y":
+            p.y_range.flipped = True
+
+        # Add HoverTool with tooltips
+        hovertool = HoverTool(tooltips=[
+            ("Date", "@Date"),
+            ("jem-id_cell_specimen", "@{jem-id_cell_specimen}"),
+            ("Cell ID", "@{ephys_roi_id}"),
+            ("LC_targeting", "@LC_targeting"),
+            ("injection region", "@{injection region}"),
+        ])
+        p.add_tools(hovertool)
+
+        # Define callback to update ephys_roi_id on point tap
+        def update_ephys_roi_id(attr, old, new):
+            if new:
+                selected_index = new[0]
+                self.data_holder.ephys_roi_id = str(
+                    int(self.df_meta.iloc[selected_index]["ephys_roi_id"])
+                )
+                logger.info(f"Selected ephys_roi_id: {self.data_holder.ephys_roi_id}")
+
+        # Attach the callback to the selection changes
+        source.selected.on_change('indices', update_ephys_roi_id)
+
+        # Activate the BoxZoom tool by default
+        p.toolbar.active_drag = p.select_one(BoxZoomTool)
+
+        # Set axis label font sizes
+        p.xaxis.axis_label_text_font_size = "14pt"
+        p.yaxis.axis_label_text_font_size = "14pt"
+
+        # Set major tick label font sizes
+        p.xaxis.major_label_text_font_size = "12pt"
+        p.yaxis.major_label_text_font_size = "12pt"
+
+        return p
+    
+    
     def create_scatter_plot(self):
         """
         Allows the user to select any two columns from self.df_meta and generates a 2D scatter plot using Bokeh.
@@ -141,73 +202,12 @@ class PatchSeqNWBApp(param.Parameterized):
             name='Y-Axis', options=sorted(list(self.df_meta.columns)), value="y"
         )
 
-        # Function to update the scatter plot based on selected columns
-        def update_scatter_plot(x_col, y_col):
-            # Create a new figure
-            p = figure(
-                x_axis_label=x_col, y_axis_label=y_col,
-                tools="pan,wheel_zoom,box_zoom,reset,tap",  # ensure tap tool is included
-                height=500,
-            )
-
-            # Create ColumnDataSource from the dataframe
-            source = ColumnDataSource(self.df_meta)
-            
-            # If any column is Date, convert it to datetime
-            if x_col == "Date":
-                source.data[x_col] = pd.to_datetime(source.data[x_col])
-
-            # Add scatter glyph using the data source
-            p.scatter(
-                x=x_col, y=y_col, source=source, size=10, color="navy", alpha=0.5
-            )
-
-            # Flip the y-axis if y_col is "y" (depth)
-            if y_col == "y":
-                p.y_range.flipped = True
-
-            # Add HoverTool with tooltips
-            hovertool = HoverTool(tooltips=[
-                ("Date", "@Date"),
-                ("jem-id_cell_specimen", "@{jem-id_cell_specimen}"),
-                ("Cell ID", "@{ephys_roi_id}"),
-                ("LC_targeting", "@LC_targeting"),
-                ("injection region", "@{injection region}"),
-            ])
-            p.add_tools(hovertool)
-
-            # Define callback to update ephys_roi_id on point tap
-            def update_ephys_roi_id(attr, old, new):
-                if new:
-                    selected_index = new[0]
-                    self.data_holder.ephys_roi_id = str(
-                        int(self.df_meta.iloc[selected_index]["ephys_roi_id"])
-                    )
-                    logger.info(f"Selected ephys_roi_id: {self.data_holder.ephys_roi_id}")
-
-            # Attach the callback to the selection changes
-            source.selected.on_change('indices', update_ephys_roi_id)
-
-            # Activate the BoxZoom tool by default
-            p.toolbar.active_drag = p.select_one(BoxZoomTool)
-
-            # Set axis label font sizes
-            p.xaxis.axis_label_text_font_size = "14pt"
-            p.yaxis.axis_label_text_font_size = "14pt"
-
-            # Set major tick label font sizes
-            p.xaxis.major_label_text_font_size = "12pt"
-            p.yaxis.major_label_text_font_size = "12pt"
-
-            return p
-
         # Create a reactive scatter plot that updates when axis selections change
         scatter_plot = pn.bind(
-            update_scatter_plot,
+            self.update_scatter_plot,
             x_axis_select.param.value,
             y_axis_select.param.value
         )
-        
         return pn.Column(
             pn.Row(x_axis_select, y_axis_select, margin=(0, 20, 20, 20)), 
             scatter_plot,
@@ -264,9 +264,7 @@ class PatchSeqNWBApp(param.Parameterized):
 
         tab_df_meta.param.watch(update_sweep_view_from_table, "selection")
         
-        
         scatter_plot = self.create_scatter_plot()
-        
         
         # Add cell-level summary plot
         def get_s3_cell_summary_plot(ephys_roi_id):
