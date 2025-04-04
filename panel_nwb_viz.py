@@ -294,7 +294,7 @@ class PatchSeqNWBApp(param.Parameterized):
                 "first_spike_AP_width @ long_square_rheo, aver",
             ],  # start with no additional columns
             height=300,
-            width=400,
+            width=430,
         )
 
         def add_df_meta_col(selected_columns):
@@ -310,7 +310,7 @@ class PatchSeqNWBApp(param.Parameterized):
             header_filters=True,
             show_index=False,
             height=300,
-            width=1300,
+            sizing_mode="stretch_width",
             pagination=None,
             stylesheets=[":host .tabulator {font-size: 12px;}"],
         )
