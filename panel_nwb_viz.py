@@ -287,7 +287,12 @@ class PatchSeqNWBApp(param.Parameterized):
         col_selector = pn.widgets.MultiSelect(
             name="Add Columns to show",
             options=selectable_cols,
-            value=["sag", "width_rheo", "width_short_square"],  # start with no additional columns
+            value=[
+                "sag",
+                "sag_ratio1 @ subthreshold, aver",
+                "width_rheo",
+                "first_spike_AP_width @ long_square_rheo, aver",
+            ],  # start with no additional columns
             height=300,
             width=400,
         )
