@@ -56,7 +56,7 @@ class PatchSeqNWBApp(param.Parameterized):
         trace = raw.get_raw_trace(sweep)[::downsample_factor]
         stimulus = raw.get_stimulus(sweep)[::downsample_factor]
         time = raw.get_time(sweep)[::downsample_factor]
-        
+
         box_zoom_x = BoxZoomTool(dimensions="width")
 
         # Create the voltage trace plot
