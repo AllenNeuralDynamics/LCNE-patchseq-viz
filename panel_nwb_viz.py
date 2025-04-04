@@ -191,6 +191,14 @@ class PatchSeqNWBApp(param.Parameterized):
             # Activate the BoxZoom tool by default
             p.toolbar.active_drag = p.select_one(BoxZoomTool)
 
+            # Set axis label font sizes
+            p.xaxis.axis_label_text_font_size = "14pt"
+            p.yaxis.axis_label_text_font_size = "14pt"
+
+            # Set major tick label font sizes
+            p.xaxis.major_label_text_font_size = "12pt"
+            p.yaxis.major_label_text_font_size = "12pt"
+
             return p
 
         # Create a reactive scatter plot that updates when axis selections change
@@ -201,9 +209,9 @@ class PatchSeqNWBApp(param.Parameterized):
         )
         
         return pn.Column(
-            pn.Row(x_axis_select, y_axis_select), 
+            pn.Row(x_axis_select, y_axis_select, margin=(0, 20, 20, 20)), 
             scatter_plot,
-            margin=(0, 20, 0, 20),  # top, right, bottom, left margins in pixels
+            margin=(0, 20, 20, 20),  # top, right, bottom, left margins in pixels
             )
 
 
@@ -469,6 +477,7 @@ class PatchSeqNWBApp(param.Parameterized):
             pn.layout.Divider(),
             show_sweeps_button,
             dynamic_content,
+            margin=(20, 20, 0, 20),  # top, right, bottom, left margins in pixels
         )
         return layout
 
