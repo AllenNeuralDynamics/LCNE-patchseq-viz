@@ -155,7 +155,7 @@ class PatchSeqNWBApp(param.Parameterized):
 
         # Add scatter glyph using the data source
         p.scatter(
-            x=x_col, y=y_col, source=source, size=10, color=color, alpha=0.5
+            x=x_col, y=y_col, source=source, size=10, color=color, alpha=0.7
         )
 
         # Flip the y-axis if y_col == "y" (depth)
