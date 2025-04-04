@@ -13,6 +13,7 @@ from bokeh.io import curdoc
 from bokeh.layouts import column as bokeh_column
 from bokeh.models import BoxZoomTool
 from bokeh.plotting import figure
+from bokeh.models import ColumnDataSource, HoverTool
 
 from LCNE_patchseq_analysis.data_util.metadata import load_ephys_metadata
 from LCNE_patchseq_analysis.data_util.nwb import PatchSeqNWB
@@ -148,6 +149,33 @@ class PatchSeqNWBApp(param.Parameterized):
             p.scatter(
                 self.df_meta[x_col], self.df_meta[y_col], size=10, color="navy", alpha=0.5
             )
+            # Flip the y-axis if y_col is "y" (depth)
+            if y_col == "y":
+                p.y_range.flipped = True
+                
+            # Add hover tool to show cell ID when hovering over points
+            hover = HoverTool(
+                tooltips=[
+                    ("Date", "@Date"),
+                    ("jem-id_cell_specimen", "@{jem-id_cell_specimen}"),
+                    ("Cell ID", "@{ephys_roi_id}"),
+                    ("LC_targeting", "@LC_targeting"),
+                    ("injection region", "@{injection region}"),
+                ]
+            )
+            p.add_tools(hover)
+            
+            # Create a ColumnDataSource with the data
+            source = ColumnDataSource(self.df_meta)
+            
+            # Replace the scatter with one that uses the source
+            p.renderers = []  # Clear previous renderers
+            p.scatter(
+                x=x_col, y=y_col, source=source, size=10, color="navy", alpha=0.5
+            )
+            
+            # Activate the box zoom tool by default
+            p.toolbar.active_drag = p.select_one(BoxZoomTool)
             return p
 
         # Bind the update function to the selected columns
