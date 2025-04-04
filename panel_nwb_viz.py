@@ -52,16 +52,16 @@ class PatchSeqNWBApp(param.Parameterized):
         self.cell_selector_panel = self.create_cell_selector_panel()
 
     @staticmethod
-    def update_bokeh(raw, sweep):
-        trace = raw.get_raw_trace(sweep)
-        stimulus = raw.get_stimulus(sweep)
-        time = raw.get_time(sweep)
+    def update_bokeh(raw, sweep, downsample_factor=3):
+        trace = raw.get_raw_trace(sweep)[::downsample_factor]
+        stimulus = raw.get_stimulus(sweep)[::downsample_factor]
+        time = raw.get_time(sweep)[::downsample_factor]
 
         box_zoom_x = BoxZoomTool(dimensions="width")
 
         # Create the voltage trace plot
         voltage_plot = figure(
-            title=f"Full raw traces - Sweep number {sweep}",
+            title=f"Full traces - Sweep number {sweep} (downsampled {downsample_factor}x)",
             height=300,
             tools=["hover", box_zoom_x, "box_zoom", "wheel_zoom", "reset", "pan"],
             active_drag=box_zoom_x,
@@ -133,11 +133,20 @@ class PatchSeqNWBApp(param.Parameterized):
         if self.data_holder.sweep_number_selected == 0:
             self.data_holder.sweep_number_selected = df_sweeps_valid.iloc[0]["sweep_number"]
 
+        # Add a slider to control the downsample factor
+        downsample_factor = pn.widgets.IntSlider(
+            name="Downsample factor",
+            value=5,
+            start=1,
+            end=10,
+        )
+
         # Bind the plotting function to the data holder's sweep number
         bokeh_panel = pn.bind(
             PatchSeqNWBApp.update_bokeh,
             raw=raw_this_cell,
             sweep=self.data_holder.param.sweep_number_selected,
+            downsample_factor=downsample_factor.param.value_throttled,
         )
 
         # Bind the S3 URL retrieval to the data holder's sweep number
@@ -156,6 +165,7 @@ class PatchSeqNWBApp(param.Parameterized):
         sweep_pane = pn.Column(
             s3_image_panel,
             bokeh_panel,
+            downsample_factor,
             sizing_mode="stretch_width",
         )
 
