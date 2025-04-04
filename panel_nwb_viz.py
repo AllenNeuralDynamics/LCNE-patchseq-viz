@@ -124,6 +124,40 @@ class PatchSeqNWBApp(param.Parameterized):
                 f"({df_sweeps[df_sweeps.sweep_number == sweep].reasons.iloc[0][0]})</span>"
             )
         return "<span style='background:lightgreen;'>Sweep passed QC!</span>"
+    
+    
+    def create_scatter_plot(self):
+        """
+        Allows the user to select any two columns from self.df_meta and generates a 2D scatter plot using Bokeh.
+        """
+        # Create dropdown widgets for selecting columns
+        x_axis_select = pn.widgets.Select(
+            name='X-Axis', options=list(self.df_meta.columns), value="first_spike_AP_width @ long_square_rheo, min"
+        )
+        y_axis_select = pn.widgets.Select(
+            name='Y-Axis', options=list(self.df_meta.columns), value="y"
+        )
+
+        # Function to update the scatter plot based on selected columns
+        def update_scatter_plot(x_col, y_col):
+            p = figure(
+                x_axis_label=x_col, y_axis_label=y_col,
+                tools="pan,wheel_zoom,box_zoom,reset",
+                height=500,
+            )
+            p.scatter(
+                self.df_meta[x_col], self.df_meta[y_col], size=10, color="navy", alpha=0.5
+            )
+            return p
+
+        # Bind the update function to the selected columns
+        scatter_plot = pn.bind(update_scatter_plot, x_axis_select, y_axis_select)
+
+        # Return a panel layout with the dropdowns and the scatter plot
+        return pn.Column(
+            pn.Row(x_axis_select, y_axis_select),
+            scatter_plot,
+        )
 
     def create_cell_selector_panel(self):
         """
@@ -174,6 +208,10 @@ class PatchSeqNWBApp(param.Parameterized):
 
         tab_df_meta.param.watch(update_sweep_view_from_table, "selection")
         
+        
+        scatter_plot = self.create_scatter_plot()
+        
+        
         # Add cell-level summary plot
         def get_s3_cell_summary_plot(ephys_roi_id):
             s3_url = get_public_url_cell_summary(ephys_roi_id)
@@ -192,7 +230,10 @@ class PatchSeqNWBApp(param.Parameterized):
                 tab_df_meta,
                 height=350,
             ),
-            s3_cell_summary_plot,
+            pn.Row(
+                scatter_plot,
+                s3_cell_summary_plot,
+            ),
         )
         return cell_selector_panel
 
