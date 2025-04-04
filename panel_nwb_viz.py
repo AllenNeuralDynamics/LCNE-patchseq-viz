@@ -52,6 +52,7 @@ class PatchSeqNWBApp(param.Parameterized):
             "ephys_qc",
             "LC_targeting",
             "injection region",
+            "y",
         ]
 
         # Create the cell selector panel once.
@@ -136,10 +137,10 @@ class PatchSeqNWBApp(param.Parameterized):
             name="Add Columns to show",
             options=selectable_cols,
             value=[
-                "sag",
-                "sag_ratio1 @ subthreshold, aver",
                 "width_rheo",
                 "first_spike_AP_width @ long_square_rheo, aver",
+                "sag",
+                "sag_ratio1 @ subthreshold, aver",
             ],  # start with no additional columns
             height=300,
             width=430,
@@ -177,7 +178,7 @@ class PatchSeqNWBApp(param.Parameterized):
         def get_s3_cell_summary_plot(ephys_roi_id):
             s3_url = get_public_url_cell_summary(ephys_roi_id)
             if s3_url:
-                return pn.pane.PNG(s3_url, width=1000)
+                return pn.pane.PNG(s3_url, height=400)
             else:
                 return pn.pane.Markdown("No S3 cell summary plot available")
 
@@ -351,7 +352,24 @@ class PatchSeqNWBApp(param.Parameterized):
         pane_one_cell = pn.bind(
             self.create_sweep_panel, ephys_roi_id=self.data_holder.param.ephys_roi_id
         )
-
+        
+        # Create a toggle button for showing/hiding raw sweeps
+        show_sweeps_button = pn.widgets.Button(name="Show raw sweeps", button_type="primary")
+        show_sweeps = pn.widgets.Toggle(name="Show raw sweeps", value=False)
+        
+        # Link the button to the toggle
+        def toggle_sweeps(event):
+            show_sweeps.value = not show_sweeps.value
+            show_sweeps_button.name = "Hide raw sweeps" if show_sweeps.value else "Show raw sweeps"
+            
+        show_sweeps_button.on_click(toggle_sweeps)
+        
+        # Create a dynamic layout that includes pane_one_cell only when show_sweeps is True
+        dynamic_content = pn.bind(
+            lambda show: pn.Column(pane_one_cell) if show else pn.Column(),
+            show_sweeps.param.value
+        )
+        
         layout = pn.Column(
             pn.pane.Markdown("# Patch-seq Ephys Data Navigator\n"),
             pn.Column(
@@ -360,7 +378,8 @@ class PatchSeqNWBApp(param.Parameterized):
             ),
             pane_cell_selector,
             pn.layout.Divider(),
-            pane_one_cell,
+            show_sweeps_button,
+            dynamic_content,
         )
         return layout
 
