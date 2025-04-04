@@ -17,7 +17,7 @@ from bokeh.plotting import figure
 from LCNE_patchseq_analysis.data_util.metadata import load_ephys_metadata
 from LCNE_patchseq_analysis.data_util.nwb import PatchSeqNWB
 from LCNE_patchseq_analysis.efel.io import load_efel_features_from_roi
-from LCNE_patchseq_analysis.pipeline_util.s3 import get_public_url_sweep
+from LCNE_patchseq_analysis.pipeline_util.s3 import get_public_url_sweep, get_public_url_cell_summary
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -124,6 +124,77 @@ class PatchSeqNWBApp(param.Parameterized):
             )
         return "<span style='background:lightgreen;'>Sweep passed QC!</span>"
 
+    def create_cell_selector_panel(self):
+        """
+        Builds and returns the cell selector panel that displays metadata.
+        """
+        # MultiSelect widget to choose additional columns.
+        cols = list(self.df_meta.columns)
+        cols.sort()
+        selectable_cols = [col for col in cols if col not in self.cell_key]
+        col_selector = pn.widgets.MultiSelect(
+            name="Add Columns to show",
+            options=selectable_cols,
+            value=[
+                "sag",
+                "sag_ratio1 @ subthreshold, aver",
+                "width_rheo",
+                "first_spike_AP_width @ long_square_rheo, aver",
+            ],  # start with no additional columns
+            height=300,
+            width=430,
+        )
+
+        def add_df_meta_col(selected_columns):
+            return self.df_meta[self.cell_key + selected_columns]
+
+        filtered_df_meta = pn.bind(add_df_meta_col, col_selector)
+        tab_df_meta = pn.widgets.Tabulator(
+            filtered_df_meta,
+            selectable=1,
+            disabled=True,  # Not editable
+            frozen_columns=self.cell_key,
+            groupby=["injection region"],
+            header_filters=True,
+            show_index=False,
+            height=300,
+            sizing_mode="stretch_width",
+            pagination=None,
+            stylesheets=[":host .tabulator {font-size: 12px;}"],
+        )
+
+        # When a row is selected, update the current cell (ephys_roi_id).
+        def update_sweep_view_from_table(event):
+            if event.new:
+                selected_index = event.new[0]
+                self.data_holder.ephys_roi_id = str(
+                    int(self.df_meta.iloc[selected_index]["ephys_roi_id"])
+                )
+
+        tab_df_meta.param.watch(update_sweep_view_from_table, "selection")
+        
+        # Add cell-level summary plot
+        def get_s3_cell_summary_plot(ephys_roi_id):
+            s3_url = get_public_url_cell_summary(ephys_roi_id)
+            if s3_url:
+                return pn.pane.PNG(s3_url, width=1000)
+            else:
+                return pn.pane.Markdown("No S3 cell summary plot available")
+
+        s3_cell_summary_plot = pn.bind(
+            get_s3_cell_summary_plot, ephys_roi_id=self.data_holder.param.ephys_roi_id
+        )
+
+        cell_selector_panel = pn.Column(
+            pn.Row(
+                col_selector,
+                tab_df_meta,
+                height=350,
+            ),
+            s3_cell_summary_plot,
+        )
+        return cell_selector_panel
+
     def create_sweep_panel(self, ephys_roi_id=""):
         """
         Builds and returns the sweep visualization panel for a single cell.
@@ -160,7 +231,7 @@ class PatchSeqNWBApp(param.Parameterized):
         )
 
         # Bind the S3 URL retrieval to the data holder's sweep number
-        def get_s3_images(sweep_number):
+        def get_s3_sweep_images(sweep_number):
             s3_url = get_public_url_sweep(ephys_roi_id, sweep_number)
             images = []
             if "sweep" in s3_url:
@@ -169,11 +240,11 @@ class PatchSeqNWBApp(param.Parameterized):
                 images.append(pn.pane.PNG(s3_url["spikes"], width=800, height=400))
             return pn.Column(*images) if images else pn.pane.Markdown("No S3 images available")
 
-        s3_image_panel = pn.bind(
-            get_s3_images, sweep_number=self.data_holder.param.sweep_number_selected
+        s3_sweep_images_panel = pn.bind(
+            get_s3_sweep_images, sweep_number=self.data_holder.param.sweep_number_selected
         )
         sweep_pane = pn.Column(
-            s3_image_panel,
+            s3_sweep_images_panel,
             bokeh_panel,
             downsample_factor,
             sizing_mode="stretch_width",
@@ -268,62 +339,6 @@ class PatchSeqNWBApp(param.Parameterized):
                 tab_sweeps,
             ),
         )
-
-    def create_cell_selector_panel(self):
-        """
-        Builds and returns the cell selector panel that displays metadata.
-        """
-        # MultiSelect widget to choose additional columns.
-        cols = list(self.df_meta.columns)
-        cols.sort()
-        selectable_cols = [col for col in cols if col not in self.cell_key]
-        col_selector = pn.widgets.MultiSelect(
-            name="Add Columns to show",
-            options=selectable_cols,
-            value=[
-                "sag",
-                "sag_ratio1 @ subthreshold, aver",
-                "width_rheo",
-                "first_spike_AP_width @ long_square_rheo, aver",
-            ],  # start with no additional columns
-            height=300,
-            width=430,
-        )
-
-        def add_df_meta_col(selected_columns):
-            return self.df_meta[self.cell_key + selected_columns]
-
-        filtered_df_meta = pn.bind(add_df_meta_col, col_selector)
-        tab_df_meta = pn.widgets.Tabulator(
-            filtered_df_meta,
-            selectable=1,
-            disabled=True,  # Not editable
-            frozen_columns=self.cell_key,
-            groupby=["injection region"],
-            header_filters=True,
-            show_index=False,
-            height=300,
-            sizing_mode="stretch_width",
-            pagination=None,
-            stylesheets=[":host .tabulator {font-size: 12px;}"],
-        )
-
-        # When a row is selected, update the current cell (ephys_roi_id).
-        def update_sweep_view_from_table(event):
-            if event.new:
-                selected_index = event.new[0]
-                self.data_holder.ephys_roi_id = str(
-                    int(self.df_meta.iloc[selected_index]["ephys_roi_id"])
-                )
-
-        tab_df_meta.param.watch(update_sweep_view_from_table, "selection")
-
-        cell_selector_panel = pn.Row(
-            col_selector,
-            tab_df_meta,
-            height=350,
-        )
-        return cell_selector_panel
 
     def main_layout(self):
         """
