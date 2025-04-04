@@ -6,6 +6,7 @@ panel serve panel_nwb_viz.py --dev --allow-websocket-origin=codeocean.allenneura
 """
 
 import logging
+
 import panel as pn
 import param
 from bokeh.io import curdoc
@@ -132,12 +133,12 @@ class PatchSeqNWBApp(param.Parameterized):
 
         # Load the NWB file for the selected cell.
         raw_this_cell = PatchSeqNWB(ephys_roi_id=ephys_roi_id, if_load_metadata=False)
-        
+
         # Now let's get df sweep from the eFEL enriched one
         # df_sweeps_valid = raw_this_cell.df_sweeps.query("passed == passed")
         df_sweeps = load_efel_features_from_roi(ephys_roi_id, if_from_s3=True)["df_sweeps"]
         df_sweeps_valid = df_sweeps.query("passed == passed")
-        
+
         # Set initial sweep number to first valid sweep
         if self.data_holder.sweep_number_selected == 0:
             self.data_holder.sweep_number_selected = df_sweeps_valid.iloc[0]["sweep_number"]
@@ -211,33 +212,25 @@ class PatchSeqNWBApp(param.Parameterized):
         # Apply conditional row highlighting.
         tab_sweeps.style.apply(
             PatchSeqNWBApp.highlight_selected_rows,
-            highlight_subset=df_sweeps_valid.query("passed == True")[
-                "sweep_number"
-            ].tolist(),
+            highlight_subset=df_sweeps_valid.query("passed == True")["sweep_number"].tolist(),
             color="lightgreen",
             fields=["passed"],
             axis=1,
         ).apply(
             PatchSeqNWBApp.highlight_selected_rows,
-            highlight_subset=df_sweeps_valid.query("passed != passed")[
-                "sweep_number"
-            ].tolist(),
+            highlight_subset=df_sweeps_valid.query("passed != passed")["sweep_number"].tolist(),
             color="salmon",
             fields=["passed"],
             axis=1,
         ).apply(
             PatchSeqNWBApp.highlight_selected_rows,
-            highlight_subset=df_sweeps_valid.query("passed == False")[
-                "sweep_number"
-            ].tolist(),
+            highlight_subset=df_sweeps_valid.query("passed == False")["sweep_number"].tolist(),
             color="yellow",
             fields=["passed"],
             axis=1,
         ).apply(
             PatchSeqNWBApp.highlight_selected_rows,
-            highlight_subset=df_sweeps_valid.query("num_spikes > 0")[
-                "sweep_number"
-            ].tolist(),
+            highlight_subset=df_sweeps_valid.query("num_spikes > 0")["sweep_number"].tolist(),
             color="lightgreen",
             fields=["num_spikes"],
             axis=1,
@@ -355,6 +348,7 @@ class PatchSeqNWBApp(param.Parameterized):
             pane_one_cell,
         )
         return layout
+
 
 app = PatchSeqNWBApp()
 layout = app.main_layout()
