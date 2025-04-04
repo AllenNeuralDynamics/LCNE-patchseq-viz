@@ -5,6 +5,7 @@ To start the app, run:
 panel serve panel_nwb_viz.py --dev --allow-websocket-origin=codeocean.allenneuraldynamics.org --title "LC-NE Patch-seq Data Explorer"  # noqa: E501
 """
 
+import logging
 import panel as pn
 import param
 from bokeh.io import curdoc
@@ -14,7 +15,11 @@ from bokeh.plotting import figure
 
 from LCNE_patchseq_analysis.data_util.metadata import load_ephys_metadata
 from LCNE_patchseq_analysis.data_util.nwb import PatchSeqNWB
+from LCNE_patchseq_analysis.efel.io import load_efel_features_from_roi
 from LCNE_patchseq_analysis.pipeline_util.s3 import get_public_url_sweep
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 pn.extension("tabulator")
 curdoc().title = "LC-NE Patch-seq Data Explorer"
@@ -35,7 +40,7 @@ class PatchSeqNWBApp(param.Parameterized):
         self.data_holder = PatchSeqNWBApp.DataHolder()
 
         # Load and prepare metadata.
-        self.df_meta = load_ephys_metadata()
+        self.df_meta = load_ephys_metadata(if_with_efel=True)
         self.df_meta = self.df_meta.rename(
             columns={col: col.replace("_tab_master", "") for col in self.df_meta.columns}
         ).sort_values(["injection region"])
@@ -126,9 +131,13 @@ class PatchSeqNWBApp(param.Parameterized):
             return pn.pane.Markdown("Please select a cell from the table above.")
 
         # Load the NWB file for the selected cell.
-        raw_this_cell = PatchSeqNWB(ephys_roi_id=ephys_roi_id)
-        df_sweeps_valid = raw_this_cell.df_sweeps.query("passed == passed")
-
+        raw_this_cell = PatchSeqNWB(ephys_roi_id=ephys_roi_id, if_load_metadata=False)
+        
+        # Now let's get df sweep from the eFEL enriched one
+        # df_sweeps_valid = raw_this_cell.df_sweeps.query("passed == passed")
+        df_sweeps = load_efel_features_from_roi(ephys_roi_id, if_from_s3=True)["df_sweeps"]
+        df_sweeps_valid = df_sweeps.query("passed == passed")
+        
         # Set initial sweep number to first valid sweep
         if self.data_holder.sweep_number_selected == 0:
             self.data_holder.sweep_number_selected = df_sweeps_valid.iloc[0]["sweep_number"]
@@ -178,6 +187,7 @@ class PatchSeqNWBApp(param.Parameterized):
                     "stimulus_name",
                     "stimulus_amplitude",
                     "passed",
+                    "efel_num_spikes",
                     "num_spikes",
                     "stimulus_start_time",
                     "stimulus_duration",
@@ -201,7 +211,7 @@ class PatchSeqNWBApp(param.Parameterized):
         # Apply conditional row highlighting.
         tab_sweeps.style.apply(
             PatchSeqNWBApp.highlight_selected_rows,
-            highlight_subset=raw_this_cell.df_sweeps.query("passed == True")[
+            highlight_subset=df_sweeps_valid.query("passed == True")[
                 "sweep_number"
             ].tolist(),
             color="lightgreen",
@@ -209,7 +219,7 @@ class PatchSeqNWBApp(param.Parameterized):
             axis=1,
         ).apply(
             PatchSeqNWBApp.highlight_selected_rows,
-            highlight_subset=raw_this_cell.df_sweeps.query("passed != passed")[
+            highlight_subset=df_sweeps_valid.query("passed != passed")[
                 "sweep_number"
             ].tolist(),
             color="salmon",
@@ -217,7 +227,7 @@ class PatchSeqNWBApp(param.Parameterized):
             axis=1,
         ).apply(
             PatchSeqNWBApp.highlight_selected_rows,
-            highlight_subset=raw_this_cell.df_sweeps.query("passed == False")[
+            highlight_subset=df_sweeps_valid.query("passed == False")[
                 "sweep_number"
             ].tolist(),
             color="yellow",
@@ -225,7 +235,7 @@ class PatchSeqNWBApp(param.Parameterized):
             axis=1,
         ).apply(
             PatchSeqNWBApp.highlight_selected_rows,
-            highlight_subset=raw_this_cell.df_sweeps.query("num_spikes > 0")[
+            highlight_subset=df_sweeps_valid.query("num_spikes > 0")[
                 "sweep_number"
             ].tolist(),
             color="lightgreen",
@@ -248,7 +258,7 @@ class PatchSeqNWBApp(param.Parameterized):
         sweep_msg = pn.bind(
             PatchSeqNWBApp.get_qc_message,
             sweep=self.data_holder.param.sweep_number_selected,
-            df_sweeps=raw_this_cell.df_sweeps,
+            df_sweeps=df_sweeps,
         )
         sweep_msg_panel = pn.pane.Markdown(sweep_msg, width=600, height=30)
 
@@ -277,8 +287,9 @@ class PatchSeqNWBApp(param.Parameterized):
         col_selector = pn.widgets.MultiSelect(
             name="Add Columns to show",
             options=selectable_cols,
-            value=[],  # start with no additional columns
-            height=500,
+            value=["sag", "width_rheo", "width_short_square"],  # start with no additional columns
+            height=300,
+            width=400,
         )
 
         def add_df_meta_col(selected_columns):
@@ -293,7 +304,7 @@ class PatchSeqNWBApp(param.Parameterized):
             groupby=["injection region"],
             header_filters=True,
             show_index=False,
-            height=500,
+            height=300,
             width=1300,
             pagination=None,
             stylesheets=[":host .tabulator {font-size: 12px;}"],
@@ -310,13 +321,9 @@ class PatchSeqNWBApp(param.Parameterized):
         tab_df_meta.param.watch(update_sweep_view_from_table, "selection")
 
         cell_selector_panel = pn.Row(
-            pn.Column(
-                pn.pane.Markdown("## Cell selector"),
-                pn.pane.Markdown(f"### Total LC-NE patch-seq cells: {len(self.df_meta)}"),
-                width=400,
-            ),
             col_selector,
             tab_df_meta,
+            height=350,
         )
         return cell_selector_panel
 
@@ -334,12 +341,15 @@ class PatchSeqNWBApp(param.Parameterized):
 
         layout = pn.Column(
             pn.pane.Markdown("# Patch-seq Ephys Data Navigator\n"),
+            pn.Column(
+                pn.pane.Markdown(f"## Cell selector (N = {len(self.df_meta)})"),
+                width=400,
+            ),
             pane_cell_selector,
             pn.layout.Divider(),
             pane_one_cell,
         )
         return layout
-
 
 app = PatchSeqNWBApp()
 layout = app.main_layout()
