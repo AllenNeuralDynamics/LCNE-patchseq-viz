@@ -11,9 +11,9 @@ import panel as pn
 import param
 from bokeh.io import curdoc
 from bokeh.layouts import column as bokeh_column
-from bokeh.models import BoxZoomTool
+from bokeh.models import BoxZoomTool, TapTool, HoverTool
 from bokeh.plotting import figure
-from bokeh.models import ColumnDataSource, HoverTool
+from bokeh.models import ColumnDataSource
 
 from LCNE_patchseq_analysis.data_util.metadata import load_ephys_metadata
 from LCNE_patchseq_analysis.data_util.nwb import PatchSeqNWB
@@ -133,7 +133,8 @@ class PatchSeqNWBApp(param.Parameterized):
         """
         # Create dropdown widgets for selecting columns
         x_axis_select = pn.widgets.Select(
-            name='X-Axis', options=list(self.df_meta.columns), value="first_spike_AP_width @ long_square_rheo, min"
+            name='X-Axis', options=list(self.df_meta.columns),
+            value="first_spike_AP_width @ long_square_rheo, min"
         )
         y_axis_select = pn.widgets.Select(
             name='Y-Axis', options=list(self.df_meta.columns), value="y"
@@ -141,51 +142,65 @@ class PatchSeqNWBApp(param.Parameterized):
 
         # Function to update the scatter plot based on selected columns
         def update_scatter_plot(x_col, y_col):
+            # Create a new figure
             p = figure(
                 x_axis_label=x_col, y_axis_label=y_col,
-                tools="pan,wheel_zoom,box_zoom,reset",
+                tools="pan,wheel_zoom,box_zoom,reset,tap",  # ensure tap tool is included
                 height=500,
             )
-            p.scatter(
-                self.df_meta[x_col], self.df_meta[y_col], size=10, color="navy", alpha=0.5
-            )
-            # Flip the y-axis if y_col is "y" (depth)
-            if y_col == "y":
-                p.y_range.flipped = True
-                
-            # Add hover tool to show cell ID when hovering over points
-            hover = HoverTool(
-                tooltips=[
-                    ("Date", "@Date"),
-                    ("jem-id_cell_specimen", "@{jem-id_cell_specimen}"),
-                    ("Cell ID", "@{ephys_roi_id}"),
-                    ("LC_targeting", "@LC_targeting"),
-                    ("injection region", "@{injection region}"),
-                ]
-            )
-            p.add_tools(hover)
-            
-            # Create a ColumnDataSource with the data
+
+            # Create ColumnDataSource from the dataframe
             source = ColumnDataSource(self.df_meta)
-            
-            # Replace the scatter with one that uses the source
-            p.renderers = []  # Clear previous renderers
+
+            # Add scatter glyph using the data source
             p.scatter(
                 x=x_col, y=y_col, source=source, size=10, color="navy", alpha=0.5
             )
-            
-            # Activate the box zoom tool by default
+
+            # Flip the y-axis if y_col is "y" (depth)
+            if y_col == "y":
+                p.y_range.flipped = True
+
+            # Add HoverTool with tooltips
+            hovertool = HoverTool(tooltips=[
+                ("Date", "@Date"),
+                ("jem-id_cell_specimen", "@{jem-id_cell_specimen}"),
+                ("Cell ID", "@{ephys_roi_id}"),
+                ("LC_targeting", "@LC_targeting"),
+                ("injection region", "@{injection region}"),
+            ])
+            p.add_tools(hovertool)
+
+            # Define callback to update ephys_roi_id on point tap
+            def update_ephys_roi_id(attr, old, new):
+                if new:
+                    selected_index = new[0]
+                    self.data_holder.ephys_roi_id = str(
+                        int(self.df_meta.iloc[selected_index]["ephys_roi_id"])
+                    )
+                    logger.info(f"Selected ephys_roi_id: {self.data_holder.ephys_roi_id}")
+
+            # Attach the callback to the selection changes
+            source.selected.on_change('indices', update_ephys_roi_id)
+
+            # Activate the BoxZoom tool by default
             p.toolbar.active_drag = p.select_one(BoxZoomTool)
+
             return p
 
-        # Bind the update function to the selected columns
-        scatter_plot = pn.bind(update_scatter_plot, x_axis_select, y_axis_select)
-
-        # Return a panel layout with the dropdowns and the scatter plot
-        return pn.Column(
-            pn.Row(x_axis_select, y_axis_select),
-            scatter_plot,
+        # Create a reactive scatter plot that updates when axis selections change
+        scatter_plot = pn.bind(
+            update_scatter_plot,
+            x_axis_select.param.value,
+            y_axis_select.param.value
         )
+        
+        return pn.Column(
+            pn.Row(x_axis_select, y_axis_select), 
+            scatter_plot,
+            margin=(0, 20, 0, 20),  # top, right, bottom, left margins in pixels
+            )
+
 
     def create_cell_selector_panel(self):
         """
