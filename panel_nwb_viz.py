@@ -2,26 +2,46 @@
 Panel-based visualization tool for navigating and visualizing patch-seq NWB files.
 
 To start the app, run:
-panel serve panel_nwb_viz.py --dev --allow-websocket-origin=codeocean.allenneuraldynamics.org --title "LC-NE Patch-seq Data Explorer"  # noqa: E501
+panel serve panel_nwb_viz.py --dev --allow-websocket-origin=codeocean.allenneuraldynamics.org --title "Patch-seq Data Explorer"  # noqa: E501
 """
 
 import logging
 
-import panel as pn
 import pandas as pd
+import panel as pn
 import param
 from bokeh.io import curdoc
 from bokeh.layouts import column as bokeh_column
-from bokeh.models import BoxZoomTool, TapTool, HoverTool, ColorBar
+from bokeh.models import (
+    BoxZoomTool,
+    CategoricalColorMapper,
+    ColorBar,
+    ColumnDataSource,
+    HoverTool,
+    LinearColorMapper,
+)
+from bokeh.palettes import (
+    Category10,
+    Category20,
+    Category20b,
+    Category20c,
+    Cividis256,
+    Inferno256,
+    Magma256,
+    Plasma256,
+    Turbo256,
+    Viridis256,
+)
 from bokeh.plotting import figure
-from bokeh.models import ColumnDataSource, CategoricalColorMapper, LinearColorMapper
-from bokeh.palettes import Viridis256, Plasma256, Magma256, Inferno256, Cividis256, Turbo256, Category10, Category20, Category20b, Category20c
 
+from LCNE_patchseq_analysis import REGION_COLOR_MAPPER
 from LCNE_patchseq_analysis.data_util.metadata import load_ephys_metadata
 from LCNE_patchseq_analysis.data_util.nwb import PatchSeqNWB
 from LCNE_patchseq_analysis.efel.io import load_efel_features_from_roi
-from LCNE_patchseq_analysis.pipeline_util.s3 import get_public_url_sweep, get_public_url_cell_summary
-from LCNE_patchseq_analysis import REGION_COLOR_MAPPER
+from LCNE_patchseq_analysis.pipeline_util.s3 import (
+    get_public_url_cell_summary,
+    get_public_url_sweep,
+)
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -31,17 +51,18 @@ curdoc().title = "LC-NE Patch-seq Data Explorer"
 
 # Define available color palettes
 COLOR_PALETTES = {
-    'Viridis256': Viridis256,
-    'Plasma256': Plasma256,
-    'Magma256': Magma256,
-    'Inferno256': Inferno256,
-    'Cividis256': Cividis256,
-    'Turbo256': Turbo256,
-    'Category10': Category10,
-    'Category20': Category20,
-    'Category20b': Category20b,
-    'Category20c': Category20c,
+    "Viridis256": Viridis256,
+    "Plasma256": Plasma256,
+    "Magma256": Magma256,
+    "Inferno256": Inferno256,
+    "Cividis256": Cividis256,
+    "Turbo256": Turbo256,
+    "Category10": Category10,
+    "Category20": Category20,
+    "Category20b": Category20b,
+    "Category20c": Category20c,
 }
+
 
 class PatchSeqNWBApp(param.Parameterized):
     """
@@ -59,18 +80,22 @@ class PatchSeqNWBApp(param.Parameterized):
 
         # Load and prepare metadata.
         self.df_meta = load_ephys_metadata(if_with_efel=True)
-        self.df_meta = self.df_meta.rename(
-            columns={col: col.replace("_tab_master", "") for col in self.df_meta.columns},
-        ).rename(
-            columns={
-                "x": "X (A --> P)",
-                "y": "Y (D --> V)",
-                "z": "Z (L --> R)",
-            }
-        ).sort_values(["injection region"])
-        
+        self.df_meta = (
+            self.df_meta.rename(
+                columns={col: col.replace("_tab_master", "") for col in self.df_meta.columns},
+            )
+            .rename(
+                columns={
+                    "x": "X (A --> P)",
+                    "y": "Y (D --> V)",
+                    "z": "Z (L --> R)",
+                }
+            )
+            .sort_values(["injection region"])
+        )
+
         self.df_meta["LC_targeting"].fillna("unknown", inplace=True)
-                
+
         self.cell_key = [
             "Date",
             "jem-id_cell_specimen",
@@ -150,8 +175,7 @@ class PatchSeqNWBApp(param.Parameterized):
                 f"({df_sweeps[df_sweeps.sweep_number == sweep].reasons.iloc[0][0]})</span>"
             )
         return "<span style='background:lightgreen;'>Sweep passed QC!</span>"
-    
-    
+
     def add_color_bar(self, color_mapper, title, p):
         """Add a color bar to the plot with consistent styling."""
         color_bar = ColorBar(
@@ -161,26 +185,26 @@ class PatchSeqNWBApp(param.Parameterized):
             location=(0, 0),
             title=title,
             title_text_font_size="12pt",
-            major_label_text_font_size="10pt"
+            major_label_text_font_size="10pt",
         )
-        p.add_layout(color_bar, 'right')
+        p.add_layout(color_bar, "right")
         return color_bar
 
     def determine_color_mapping(self, color_mapping, color_palette, p):
-        if color_mapping == 'injection region':
+        if color_mapping == "injection region":
             color_mapper = {
-                key: value for key, value in REGION_COLOR_MAPPER.items() 
+                key: value
+                for key, value in REGION_COLOR_MAPPER.items()
                 if key in self.df_meta["injection region"].unique()
             }
             color_mapper = CategoricalColorMapper(
-                factors=list(color_mapper.keys()),
-                palette=list(color_mapper.values())
+                factors=list(color_mapper.keys()), palette=list(color_mapper.values())
             )
-            
+
             # Add a color bar for categorical data
             self.add_color_bar(color_mapper, color_mapping, p)
-            return {'field': color_mapping, 'transform': color_mapper}
-            
+            return {"field": color_mapping, "transform": color_mapper}
+
         # If categorical (nunique <= 10), use categorical color mapper
         if self.df_meta[color_mapping].nunique() <= 10:
             color_mapper = CategoricalColorMapper(
@@ -188,51 +212,67 @@ class PatchSeqNWBApp(param.Parameterized):
                 palette=color_palette[self.df_meta[color_mapping].nunique()],
             )
             self.add_color_bar(color_mapper, color_mapping, p)
-            return {'field': color_mapping, 'transform': color_mapper}
-        
+            return {"field": color_mapping, "transform": color_mapper}
+
         # Try to convert the column to numeric
-        numeric_data = pd.Series(pd.to_numeric(self.df_meta[color_mapping], errors='coerce'))
+        numeric_data = pd.Series(pd.to_numeric(self.df_meta[color_mapping], errors="coerce"))
         if not numeric_data.isna().all():
             # If conversion is successful, use linear color mapper
             low = numeric_data.min()
             high = numeric_data.max()
             color_mapper = LinearColorMapper(palette=color_palette, low=low, high=high)
-            color = {'field': color_mapping, 'transform': color_mapper}
-            
+            color = {"field": color_mapping, "transform": color_mapper}
+
             # Add a color bar
             self.add_color_bar(color_mapper, color_mapping, p)
             return color
-            
+
         return "black"
-    
+
     def determine_size_mapping(self, size_mapping, source, min_size=10, max_size=20, gamma=1):
         if size_mapping == "None":
             return 10
-        
+
         if size_mapping in self.df_meta.columns:
-            numeric_data = pd.Series(pd.to_numeric(self.df_meta[size_mapping], errors='coerce'))
+            numeric_data = pd.Series(pd.to_numeric(self.df_meta[size_mapping], errors="coerce"))
             if not numeric_data.isna().all():
                 # Get the 5th and 95th percentiles of the numeric data
                 p5 = numeric_data.quantile(0.00)
                 p95 = numeric_data.quantile(1.00)
-                                
-                # Map the normalized values to sizes between 10 and 20 with gamma control for nonlinearity
-                normalized_values = ((numeric_data - p5) / (p95 - p5)).clip(0, 1)  # Ensure values are between 0 and 1
-                normalized_sizes = min_size + (normalized_values ** gamma) * (max_size - min_size)
-                
+
+                # Map the normalized values to sizes between 10 and 20 with
+                # gamma control for nonlinearity
+                normalized_values = ((numeric_data - p5) / (p95 - p5)).clip(
+                    0, 1
+                )  # Ensure values are between 0 and 1
+                normalized_sizes = min_size + (normalized_values**gamma) * (max_size - min_size)
+
                 # Replace NaN values with the minimum size
-                normalized_sizes = normalized_sizes.fillna(5) # Fixed size for NaN values
-                
+                normalized_sizes = normalized_sizes.fillna(5)  # Fixed size for NaN values
+
                 # Add the size values to the source data
-                source.data['size_values'] = normalized_sizes
-                return 'size_values'
-        
+                source.data["size_values"] = normalized_sizes
+                return "size_values"
+
         return 10
 
-    def update_scatter_plot(self, x_col, y_col, color_col, color_palette, size_col, size_range, size_gamma, alpha, width, height):
+    def update_scatter_plot(
+        self,
+        x_col,
+        y_col,
+        color_col,
+        color_palette,
+        size_col,
+        size_range,
+        size_gamma,
+        alpha,
+        width,
+        height,
+    ):
         # Create a new figure
         p = figure(
-            x_axis_label=x_col, y_axis_label=y_col,
+            x_axis_label=x_col,
+            y_axis_label=y_col,
             tools="pan,wheel_zoom,box_zoom,reset,tap",  # ensure tap tool is included
             height=height,
             width=width,
@@ -240,28 +280,28 @@ class PatchSeqNWBApp(param.Parameterized):
 
         # Create ColumnDataSource from the dataframe
         source = ColumnDataSource(self.df_meta)
-        
+
         # If any column is Date, convert it to datetime
         if x_col == "Date":
-            source.data[x_col] = pd.to_datetime(pd.Series(source.data[x_col]), errors='coerce')
+            source.data[x_col] = pd.to_datetime(pd.Series(source.data[x_col]), errors="coerce")
 
         # Determine color mapping
         color = self.determine_color_mapping(color_col, COLOR_PALETTES[color_palette], p)
-        
+
         # Determine size mapping
-        size = self.determine_size_mapping(size_col, source, min_size=size_range[0], max_size=size_range[1], gamma=size_gamma)
+        size = self.determine_size_mapping(
+            size_col, source, min_size=size_range[0], max_size=size_range[1], gamma=size_gamma
+        )
 
         # Add scatter glyph using the data source
-        p.scatter(
-            x=x_col, y=y_col, source=source, size=size, color=color, alpha=alpha
-        )
+        p.scatter(x=x_col, y=y_col, source=source, size=size, color=color, alpha=alpha)
 
         # Flip the y-axis if y_col == "y" (depth)
         if y_col == "Y (D --> V)":
             p.y_range.flipped = True
 
         # Add HoverTool with tooltips
-        tooltips=[
+        tooltips = [
             ("Date", "@Date"),
             ("jem-id_cell_specimen", "@{jem-id_cell_specimen}"),
             ("Cell ID", "@{ephys_roi_id}"),
@@ -277,7 +317,7 @@ class PatchSeqNWBApp(param.Parameterized):
             tooltips.append((f"Color ({color_col})", f"@{{{color_col}}}"))
         if size_col != "None":
             tooltips.append((f"Size ({size_col})", f"@{{{size_col}}}"))
-            
+
         hovertool = HoverTool(tooltips=tooltips)
         p.add_tools(hovertool)
 
@@ -291,11 +331,11 @@ class PatchSeqNWBApp(param.Parameterized):
                 logger.info(f"Selected ephys_roi_id: {self.data_holder.ephys_roi_id}")
 
         # Attach the callback to the selection changes
-        if hasattr(source.selected, 'on_change'):
-            source.selected.on_change('indices', update_ephys_roi_id)
+        if hasattr(source.selected, "on_change"):
+            source.selected.on_change("indices", update_ephys_roi_id)
         else:
             # Alternative method to handle selection changes
-            source.selected.on('indices', update_ephys_roi_id)
+            source.selected.on("indices", update_ephys_roi_id)
 
         # Activate the BoxZoom tool by default
         box_zoom_tool = p.select_one(BoxZoomTool)
@@ -311,57 +351,57 @@ class PatchSeqNWBApp(param.Parameterized):
         p.yaxis.major_label_text_font_size = "12pt"
 
         return p
-    
-    
+
     def create_scatter_plot(self):
         """
-        Allows the user to select any two columns from self.df_meta and generates a 2D scatter plot using Bokeh.
+        Allows the user to select any two columns from self.df_meta and
+        generates a 2D scatter plot using Bokeh.
         """
         # Create dropdown widgets for selecting columns
         x_axis_select = pn.widgets.Select(
-            name='X-Axis', options=sorted(list(self.df_meta.columns)),
+            name="X-Axis",
+            options=sorted(list(self.df_meta.columns)),
             value="first_spike_AP_width @ long_square_rheo, min",
-            width=200
+            width=200,
         )
         y_axis_select = pn.widgets.Select(
-            name='Y-Axis', options=sorted(list(self.df_meta.columns)), value="Y (D --> V)",
-            width=200
+            name="Y-Axis",
+            options=sorted(list(self.df_meta.columns)),
+            value="Y (D --> V)",
+            width=200,
         )
         color_col_select = pn.widgets.Select(
-            name='Color Mapping', options=["None"] + sorted(list(self.df_meta.columns)),
+            name="Color Mapping",
+            options=["None"] + sorted(list(self.df_meta.columns)),
             value="injection region",
-            width=200
+            width=200,
         )
         size_col_select = pn.widgets.Select(
-            name='Size Mapping', options=["None"] + sorted(list(self.df_meta.columns)), 
+            name="Size Mapping",
+            options=["None"] + sorted(list(self.df_meta.columns)),
             value="None",
-            width=200
+            width=200,
         )
         alpha_slider = pn.widgets.FloatSlider(
-            name='Alpha', value=0.7, start=0.0, end=1.0, step=0.01, width=200
+            name="Alpha", value=0.7, start=0.0, end=1.0, step=0.01, width=200
         )
         # Add range slider for controlling min and max marker sizes
         size_range_slider = pn.widgets.RangeSlider(
-            name='Size Range (min, max)', 
-            start=5, 
-            end=30, 
-            value=(8, 20), 
-            step=1, 
-            width=200
+            name="Size Range (min, max)", start=5, end=30, value=(8, 20), step=1, width=200
         )
         size_gamma_slider = pn.widgets.FloatSlider(
-            name='Size Gamma', value=1, start=0.0, end=5.0, step=0.01, width=200
+            name="Size Gamma", value=1, start=0.0, end=5.0, step=0.01, width=200
         )
         color_palette_select = pn.widgets.Select(
-            name='Color Palette', options=list(COLOR_PALETTES.keys()), value='Viridis256', width=200
+            name="Color Palette", options=list(COLOR_PALETTES.keys()), value="Viridis256", width=200
         )
-        
+
         # Add plot size controls
         width_slider = pn.widgets.IntSlider(
-            name='Plot Width', value=650, start=400, end=1200, step=50, width=200
+            name="Plot Width", value=650, start=400, end=1200, step=50, width=200
         )
         height_slider = pn.widgets.IntSlider(
-            name='Plot Height', value=500, start=300, end=1000, step=50, width=200
+            name="Plot Height", value=500, start=300, end=1000, step=50, width=200
         )
 
         # Create a reactive scatter plot that updates when axis selections change
@@ -380,28 +420,30 @@ class PatchSeqNWBApp(param.Parameterized):
         )
         return pn.Row(
             pn.Column(
-                x_axis_select, 
-                y_axis_select, 
+                x_axis_select,
+                y_axis_select,
                 color_col_select,
                 size_col_select,
                 pn.layout.Divider(margin=(10, 0, 10, 0)),
                 pn.Accordion(
-                    ("Appearance Settings", pn.Column(
-                        color_palette_select,
-                        size_range_slider,
-                        size_gamma_slider,
-                        alpha_slider,
-                        width_slider,
-                        height_slider,
-                    )),
+                    (
+                        "Appearance Settings",
+                        pn.Column(
+                            color_palette_select,
+                            size_range_slider,
+                            size_gamma_slider,
+                            alpha_slider,
+                            width_slider,
+                            height_slider,
+                        ),
+                    ),
                     active=[1],  # Open by default
                 ),
-                margin=(0, 20, 20, 20)
-            ), 
+                margin=(0, 20, 20, 20),
+            ),
             scatter_plot,
             margin=(0, 20, 20, 20),  # top, right, bottom, left margins in pixels
         )
-
 
     def create_cell_selector_panel(self):
         """
@@ -451,9 +493,9 @@ class PatchSeqNWBApp(param.Parameterized):
                 )
 
         tab_df_meta.param.watch(update_sweep_view_from_table, "selection")
-        
+
         scatter_plot = self.create_scatter_plot()
-        
+
         # Add cell-level summary plot
         def get_s3_cell_summary_plot(ephys_roi_id):
             s3_url = get_public_url_cell_summary(ephys_roi_id)
@@ -635,26 +677,25 @@ class PatchSeqNWBApp(param.Parameterized):
         pane_one_cell = pn.bind(
             self.create_sweep_panel, ephys_roi_id=self.data_holder.param.ephys_roi_id
         )
-        
+
         # Create a toggle button for showing/hiding raw sweeps
         show_sweeps_button = pn.widgets.Button(name="Show raw sweeps", button_type="primary")
         show_sweeps = pn.widgets.Toggle(name="Show raw sweeps", value=False)
-        
+
         # Link the button to the toggle
         def toggle_sweeps(event):
             show_sweeps.value = not show_sweeps.value
             show_sweeps_button.name = "Hide raw sweeps" if show_sweeps.value else "Show raw sweeps"
-            
+
         show_sweeps_button.on_click(toggle_sweeps)
-        
+
         # Create a dynamic layout that includes pane_one_cell only when show_sweeps is True
         dynamic_content = pn.bind(
-            lambda show: pn.Column(pane_one_cell) if show else pn.Column(),
-            show_sweeps.param.value
+            lambda show: pn.Column(pane_one_cell) if show else pn.Column(), show_sweeps.param.value
         )
-        
+
         layout = pn.Column(
-            pn.pane.Markdown("# Patch-seq Ephys Data Navigator\n"),
+            pn.pane.Markdown("# Patch-seq Ephys Data Explorer\n"),
             pn.Column(
                 pn.pane.Markdown(f"## Cell selector (N = {len(self.df_meta)})"),
                 width=400,
