@@ -12,9 +12,10 @@ import pandas as pd
 import param
 from bokeh.io import curdoc
 from bokeh.layouts import column as bokeh_column
-from bokeh.models import BoxZoomTool, TapTool, HoverTool
+from bokeh.models import BoxZoomTool, TapTool, HoverTool, ColorBar
 from bokeh.plotting import figure
-from bokeh.models import ColumnDataSource, CategoricalColorMapper
+from bokeh.models import ColumnDataSource, CategoricalColorMapper, LinearColorMapper
+from bokeh.palettes import Viridis256
 
 from LCNE_patchseq_analysis.data_util.metadata import load_ephys_metadata
 from LCNE_patchseq_analysis.data_util.nwb import PatchSeqNWB
@@ -129,12 +130,44 @@ class PatchSeqNWBApp(param.Parameterized):
         return "<span style='background:lightgreen;'>Sweep passed QC!</span>"
     
     
+    def determine_color_mapping(self, color_mapping, source, p):
+        if color_mapping == 'injection region':
+            return {'field': color_mapping, 'transform': CategoricalColorMapper(
+                factors=list(REGION_COLOR_MAPPER.keys()),
+                palette=list(REGION_COLOR_MAPPER.values())
+            )}
+            
+        if color_mapping in self.df_meta.columns:
+            # Try to convert the column to numeric
+            numeric_data = pd.Series(pd.to_numeric(self.df_meta[color_mapping], errors='coerce'))
+            if not numeric_data.isna().all():
+                # If conversion is successful, use linear color mapper
+                low = numeric_data.min()
+                high = numeric_data.max()
+                color_mapper = LinearColorMapper(palette=Viridis256, low=low, high=high)
+                color = {'field': color_mapping, 'transform': color_mapper}
+                
+                # Add a color bar
+                color_bar = ColorBar(
+                    color_mapper=color_mapper,
+                    label_standoff=12,
+                    border_line_color=None,
+                    location=(0, 0),
+                    title=color_mapping,
+                    title_text_font_size="12pt",
+                    major_label_text_font_size="10pt"
+                )
+                p.add_layout(color_bar, 'right')
+                return color
+        return "black"
+
     def update_scatter_plot(self, x_col, y_col, color_mapping, size_mapping):
         # Create a new figure
         p = figure(
             x_axis_label=x_col, y_axis_label=y_col,
             tools="pan,wheel_zoom,box_zoom,reset,tap",  # ensure tap tool is included
             height=500,
+            width=600,
         )
 
         # Create ColumnDataSource from the dataframe
@@ -142,16 +175,10 @@ class PatchSeqNWBApp(param.Parameterized):
         
         # If any column is Date, convert it to datetime
         if x_col == "Date":
-            source.data[x_col] = pd.to_datetime(source.data[x_col], errors='coerce')
+            source.data[x_col] = pd.to_datetime(pd.Series(source.data[x_col]), errors='coerce')
 
         # Determine color mapping
-        if color_mapping == 'injection region':
-            color = {'field': color_mapping, 'transform': CategoricalColorMapper(
-                factors=list(REGION_COLOR_MAPPER.keys()),
-                palette=list(REGION_COLOR_MAPPER.values())
-            )}
-        else:
-            color = "black"
+        color = self.determine_color_mapping(color_mapping, source, p)
 
         # Add scatter glyph using the data source
         p.scatter(
@@ -184,6 +211,9 @@ class PatchSeqNWBApp(param.Parameterized):
         # Attach the callback to the selection changes
         if hasattr(source.selected, 'on_change'):
             source.selected.on_change('indices', update_ephys_roi_id)
+        else:
+            # Alternative method to handle selection changes
+            source.selected.on('indices', update_ephys_roi_id)
 
         # Activate the BoxZoom tool by default
         box_zoom_tool = p.select_one(BoxZoomTool)
@@ -216,12 +246,12 @@ class PatchSeqNWBApp(param.Parameterized):
             width=200
         )
         color_mapping_select = pn.widgets.Select(
-            name='Color Mapping', options=sorted(list(self.df_meta.columns)),
+            name='Color Mapping', options=["None"] + sorted(list(self.df_meta.columns)),
             value="injection region",
             width=200
         )
         size_mapping_select = pn.widgets.Select(
-            name='Size Mapping', options=sorted(list(self.df_meta.columns)), value="Date",
+            name='Size Mapping', options=["None"] + sorted(list(self.df_meta.columns)), value="Date",
             width=200
         )
 
