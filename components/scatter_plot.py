@@ -6,7 +6,7 @@ from typing import List, Tuple, Any, Dict
 
 import pandas as pd
 import panel as pn
-from bokeh.models import HoverTool, ColumnDataSource
+from bokeh.models import HoverTool, ColumnDataSource, BoxZoomTool
 from bokeh.plotting import figure
 
 from LCNE_patchseq_analysis.panel_app.components.color_mapping import ColorMapping
@@ -187,6 +187,9 @@ class ScatterPlot:
 
         # Attach the callback to the selection changes
         source.selected.on_change("indices", update_ephys_roi_id)
+        
+        # Set the default tool activated on drag to be box zoom
+        p.toolbar.active_drag = p.select_one(BoxZoomTool)
 
         # Set axis label font sizes
         p.xaxis.axis_label_text_font_size = "14pt"
