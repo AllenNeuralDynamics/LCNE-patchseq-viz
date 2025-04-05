@@ -220,23 +220,38 @@ class PatchSeqNWBApp(param.Parameterized):
             controls["width_slider"].param.value_throttled,
             controls["height_slider"].param.value_throttled,
             controls["bins_slider"].param.value_throttled,
+            controls["show_gmm"].param.value,
+            controls["n_components_x"].param.value,
+            controls["n_components_y"].param.value,
         )
 
         return pn.Row(
             pn.Column(
                 controls["x_axis_select"],
                 controls["y_axis_select"],
+                pn.layout.Divider(margin=(5, 0, 5, 0)),
                 controls["color_col_select"],
                 controls["size_col_select"],
-                pn.layout.Divider(margin=(10, 0, 10, 0)),
-                controls["color_palette_select"],
-                controls["size_range_slider"],
-                controls["size_gamma_slider"],
-                controls["alpha_slider"],
-                controls["width_slider"],
-                controls["height_slider"],
+                pn.layout.Divider(margin=(5, 0, 5, 0)),
                 controls["bins_slider"],
+                controls["show_gmm"],
+                controls["n_components_x"],
+                controls["n_components_y"],
+                pn.layout.Divider(margin=(5, 0, 5, 0)),
+                pn.Accordion(
+                    ("Plot settings",
+                     pn.Column(
+                         controls["color_palette_select"],
+                         controls["size_range_slider"],
+                         controls["size_gamma_slider"],
+                         controls["alpha_slider"],
+                         controls["width_slider"],
+                         controls["height_slider"],
+                     )),
+                    active=[1],
+                ),
                 margin=(0, 20, 20, 0),  # top, right, bottom, left margins in pixels
+                width=200,
             ),
             scatter_plot,
             margin=(0, 20, 20, 20),  # top, right, bottom, left margins in pixels

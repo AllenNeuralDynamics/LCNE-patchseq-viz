@@ -107,6 +107,27 @@ class ScatterPlot:
                 step=1,
                 width=width,
             ),
+            "show_gmm": pn.widgets.Checkbox(
+                name="Show Gaussian Mixture Model",
+                value=False,
+                width=width,
+            ),
+            "n_components_x": pn.widgets.IntSlider(
+                name="Number of Gaussian Components",
+                start=1,
+                end=5,
+                value=2,
+                step=1,
+                width=width,
+            ),
+            "n_components_y": pn.widgets.IntSlider(
+                name="Number of Gaussian Components",
+                start=1,
+                end=5,
+                value=1,
+                step=1,
+                width=width,
+            ),
         }
         return controls
 
@@ -138,9 +159,10 @@ class ScatterPlot:
         return tooltips
 
     def create_marginal_histogram(
-        self, data: pd.Series, orientation: str, width: int, height: int, alpha: float, bins: int
+        self, data: pd.Series, orientation: str, width: int, height: int, alpha: float, bins: int,
+        show_gmm: bool = False, n_components: int = 1
     ) -> figure:
-        """Create a histogram for marginal distribution."""
+        """Create a histogram for marginal distribution with optional GMM overlay."""
         # Remove NaN values and convert to numeric
         clean_data = pd.to_numeric(data, errors='coerce').dropna()
         
@@ -168,7 +190,7 @@ class ScatterPlot:
             return p
             
         # Calculate histogram data
-        hist, edges = np.histogram(clean_data, bins=bins)
+        hist, edges = np.histogram(clean_data, bins=bins, density=True)
         
         if orientation == "x":
             p = figure(
@@ -176,8 +198,8 @@ class ScatterPlot:
                 width=width,
                 tools="",
                 toolbar_location=None,
-                x_range=(edges[0], edges[-1]),  # Set x_range to data range
-                y_range=(0, hist.max() * 1.1),  # Set y_range to histogram range
+                x_range=(edges[0], edges[-1]),
+                y_range=(0, hist.max() * 1.1),
             )
             p.quad(
                 top=hist,
@@ -188,6 +210,28 @@ class ScatterPlot:
                 line_color="white",
                 alpha=alpha,
             )
+            
+            if show_gmm:
+                from sklearn.mixture import GaussianMixture
+                # Fit GMM
+                gmm = GaussianMixture(n_components=n_components)
+                gmm.fit(clean_data.values.reshape(-1, 1))
+                
+                # Create points for GMM curve
+                x = np.linspace(edges[0], edges[-1], 1000)
+                y = np.exp(gmm.score_samples(x.reshape(-1, 1)))
+                
+                # Plot GMM
+                p.line(x, y, line_color="red", line_width=2, alpha=0.8)
+                
+                # Plot individual components
+                for i in range(n_components):
+                    mean = gmm.means_[i][0]
+                    std = np.sqrt(gmm.covariances_[i][0][0])
+                    weight = gmm.weights_[i]
+                    component = weight * np.exp(-0.5 * ((x - mean) / std) ** 2) / (std * np.sqrt(2 * np.pi))
+                    p.line(x, component, line_color="blue", line_width=1, alpha=0.5, line_dash="dashed")
+            
             p.yaxis.visible = False
             p.xaxis.visible = False
             p.grid.visible = False
@@ -197,8 +241,8 @@ class ScatterPlot:
                 width=width,
                 tools="",
                 toolbar_location=None,
-                x_range=(0, hist.max() * 1.1),  # Set x_range to histogram range
-                y_range=(edges[0], edges[-1]),  # Set y_range to data range
+                x_range=(0, hist.max() * 1.1),
+                y_range=(edges[0], edges[-1]),
             )
             p.quad(
                 left=0,
@@ -209,6 +253,28 @@ class ScatterPlot:
                 line_color="white",
                 alpha=alpha,
             )
+            
+            if show_gmm:
+                from sklearn.mixture import GaussianMixture
+                # Fit GMM
+                gmm = GaussianMixture(n_components=n_components)
+                gmm.fit(clean_data.values.reshape(-1, 1))
+                
+                # Create points for GMM curve
+                y = np.linspace(edges[0], edges[-1], 1000)
+                x = np.exp(gmm.score_samples(y.reshape(-1, 1)))
+                
+                # Plot GMM
+                p.line(x, y, line_color="red", line_width=2, alpha=0.8)
+                
+                # Plot individual components
+                for i in range(n_components):
+                    mean = gmm.means_[i][0]
+                    std = np.sqrt(gmm.covariances_[i][0][0])
+                    weight = gmm.weights_[i]
+                    component = weight * np.exp(-0.5 * ((y - mean) / std) ** 2) / (std * np.sqrt(2 * np.pi))
+                    p.line(component, y, line_color="blue", line_width=1, alpha=0.5, line_dash="dashed")
+            
             p.xaxis.visible = False
             p.yaxis.visible = False
             p.grid.visible = False
@@ -226,7 +292,10 @@ class ScatterPlot:
         alpha: float,
         width: int,
         height: int,
-        bins: int = 30,  # number of bins for the marginal histograms
+        bins: int = 30,
+        show_gmm: bool = False,
+        n_components_x: int = 2,
+        n_components_y: int = 1,
     ) -> gridplot:
         """Update the scatter plot with new parameters."""
         # Create a new figure for the main scatter plot
@@ -294,7 +363,8 @@ class ScatterPlot:
         try:
             if x_col != "Date" and x_col != "None":  # Skip histogram for Date column
                 x_hist = self.create_marginal_histogram(
-                    self.df_meta[x_col], "x", width=width, height=100, alpha=alpha, bins=bins
+                    self.df_meta[x_col], "x", width=width, height=100, alpha=alpha, bins=bins,
+                    show_gmm=show_gmm, n_components=n_components_x
                 )
                 x_hist.x_range = p.x_range  # Link x ranges
         except Exception as e:
@@ -305,7 +375,8 @@ class ScatterPlot:
         try:
             if y_col != "Date" and y_col != "None":  # Skip histogram for Date column
                 y_hist = self.create_marginal_histogram(
-                    self.df_meta[y_col], "y", width=100, height=height, alpha=alpha, bins=bins
+                    self.df_meta[y_col], "y", width=100, height=height, alpha=alpha, bins=bins,
+                    show_gmm=show_gmm, n_components=n_components_y
                 )
                 y_hist.y_range = p.y_range  # Link y ranges
         except Exception as e:
