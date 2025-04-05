@@ -8,6 +8,8 @@ import pandas as pd
 import panel as pn
 from bokeh.models import HoverTool, ColumnDataSource, BoxZoomTool
 from bokeh.plotting import figure
+from bokeh.layouts import gridplot
+import numpy as np
 
 from LCNE_patchseq_analysis.panel_app.components.color_mapping import ColorMapping
 from LCNE_patchseq_analysis.panel_app.components.size_mapping import SizeMapping
@@ -100,7 +102,9 @@ class ScatterPlot:
         }
         return controls
 
-    def create_tooltips(self, x_col: str, y_col: str, color_col: str, size_col: str) -> List[Tuple[str, str]]:
+    def create_tooltips(
+        self, x_col: str, y_col: str, color_col: str, size_col: str
+    ) -> List[Tuple[str, str]]:
         """Create tooltips for the hover tool."""
         tooltips = [
             ("Date", "@Date"),
@@ -125,6 +129,83 @@ class ScatterPlot:
             
         return tooltips
 
+    def create_marginal_histogram(
+        self, data: pd.Series, orientation: str, width: int, height: int
+    ) -> figure:
+        """Create a histogram for marginal distribution."""
+        # Remove NaN values and convert to numeric
+        clean_data = pd.to_numeric(data, errors='coerce').dropna()
+        
+        if len(clean_data) == 0:
+            # If no valid data, create empty plot
+            if orientation == "x":
+                p = figure(
+                    height=height,
+                    width=width,
+                    tools="",
+                    toolbar_location=None,
+                    x_range=(0, 1),
+                    y_range=(0, 1),
+                )
+            else:
+                p = figure(
+                    height=height,
+                    width=width,
+                    tools="",
+                    toolbar_location=None,
+                    x_range=(0, 1),
+                    y_range=(0, 1),
+                )
+            p.text(x=0.5, y=0.5, text=["No valid data"], text_align="center", text_baseline="middle")
+            return p
+            
+        # Calculate histogram data
+        hist, edges = np.histogram(clean_data, bins=30)
+        
+        if orientation == "x":
+            p = figure(
+                height=height,
+                width=width,
+                tools="",
+                toolbar_location=None,
+                x_range=(edges[0], edges[-1]),  # Set x_range to data range
+                y_range=(0, hist.max() * 1.1),  # Set y_range to histogram range
+            )
+            p.quad(
+                top=hist,
+                bottom=0,
+                left=edges[:-1],
+                right=edges[1:],
+                fill_color="navy",
+                line_color="white",
+                alpha=0.5,
+            )
+            p.yaxis.visible = False
+            p.xaxis.visible = False
+            p.grid.visible = False
+        else:  # y orientation
+            p = figure(
+                height=height,
+                width=width,
+                tools="",
+                toolbar_location=None,
+                x_range=(0, hist.max() * 1.1),  # Set x_range to histogram range
+                y_range=(edges[0], edges[-1]),  # Set y_range to data range
+            )
+            p.quad(
+                left=0,
+                right=hist,
+                top=edges[:-1],
+                bottom=edges[1:],
+                fill_color="navy",
+                line_color="white",
+                alpha=0.5,
+            )
+            p.xaxis.visible = False
+            p.yaxis.visible = False
+            p.grid.visible = False
+        return p
+
     def update_scatter_plot(
         self,
         x_col: str,
@@ -137,9 +218,9 @@ class ScatterPlot:
         alpha: float,
         width: int,
         height: int,
-    ) -> figure:
+    ) -> gridplot:
         """Update the scatter plot with new parameters."""
-        # Create a new figure
+        # Create a new figure for the main scatter plot
         p = figure(
             x_axis_label=x_col,
             y_axis_label=y_col,
@@ -199,4 +280,35 @@ class ScatterPlot:
         p.xaxis.major_label_text_font_size = "12pt"
         p.yaxis.major_label_text_font_size = "12pt"
 
-        return p 
+        # Create marginal histograms
+        x_hist = None
+        try:
+            if x_col != "Date" and x_col != "None":  # Skip histogram for Date column
+                x_hist = self.create_marginal_histogram(
+                    self.df_meta[x_col], "x", width=width, height=100
+                )
+                x_hist.x_range = p.x_range  # Link x ranges
+        except Exception as e:
+            logger.warning(f"Could not create x histogram: {e}")
+            x_hist = None
+
+        y_hist = None
+        try:
+            if y_col != "Date" and y_col != "None":  # Skip histogram for Date column
+                y_hist = self.create_marginal_histogram(
+                    self.df_meta[y_col], "y", width=100, height=height
+                )
+                y_hist.y_range = p.y_range  # Link y ranges
+        except Exception as e:
+            logger.warning(f"Could not create y histogram: {e}")
+            y_hist = None
+
+        # Create grid layout
+        layout = gridplot(
+            [[y_hist, p], [None, x_hist]],
+            toolbar_location="right",
+            merge_tools=True,
+            toolbar_options=dict(logo=None),
+        )
+
+        return layout 
