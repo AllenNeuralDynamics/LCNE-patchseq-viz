@@ -54,14 +54,14 @@ class ScatterPlot:
             "size_col_select": pn.widgets.Select(
                 name="Size By",
                 options=all_cols,
-                value="None",
+                value="sag_ratio1 @ subthreshold, aver",
                 width=200,
             ),
             "size_range_slider": pn.widgets.RangeSlider(
                 name="Size Range",
                 start=5,
-                end=30,
-                value=(10, 20),
+                end=40,
+                value=(10, 30),
                 step=1,
                 width=200,
             ),
