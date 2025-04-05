@@ -27,7 +27,7 @@ class ScatterPlot:
         self.size_mapping = SizeMapping(df_meta)
         self.data_holder = data_holder
 
-    def create_plot_controls(self) -> Dict[str, Any]:
+    def create_plot_controls(self, width: int = 180) -> Dict[str, Any]:
         """Create the control widgets for the scatter plot."""
         # Get numeric and categorical columns
         numeric_cols = self.df_meta.select_dtypes(include=["number"]).columns.tolist()
@@ -39,25 +39,25 @@ class ScatterPlot:
                 name="X Axis",
                 options=all_cols,
                 value="first_spike_spike_half_width @ long_square_rheo, min",
-                width=200,
+                width=width,
             ),
             "y_axis_select": pn.widgets.Select(
                 name="Y Axis",
                 options=all_cols,
                 value="Y (D --> V)",
-                width=200,
+                width=width,
             ),
             "color_col_select": pn.widgets.Select(
                 name="Color By",
                 options=all_cols,
                 value="injection region",
-                width=200,
+                width=width,
             ),
             "size_col_select": pn.widgets.Select(
                 name="Size By",
                 options=all_cols,
                 value="sag_ratio1 @ subthreshold, aver",
-                width=200,
+                width=width,
             ),
             "size_range_slider": pn.widgets.RangeSlider(
                 name="Size Range",
@@ -65,7 +65,7 @@ class ScatterPlot:
                 end=40,
                 value=(10, 30),
                 step=1,
-                width=200,
+                width=width,
             ),
             "size_gamma_slider": pn.widgets.FloatSlider(
                 name="Size Gamma",
@@ -73,7 +73,7 @@ class ScatterPlot:
                 end=5,
                 value=1,
                 step=0.1,
-                width=200,
+                width=width,
             ),
             "alpha_slider": pn.widgets.FloatSlider(
                 name="Alpha",
@@ -81,7 +81,7 @@ class ScatterPlot:
                 end=1,
                 value=0.7,
                 step=0.1,
-                width=200,
+                width=width,
             ),
             "width_slider": pn.widgets.IntSlider(
                 name="Width",
@@ -89,7 +89,7 @@ class ScatterPlot:
                 end=1200,
                 value=800,
                 step=50,
-                width=200,
+                width=width,
             ),
             "height_slider": pn.widgets.IntSlider(
                 name="Height",
@@ -97,7 +97,15 @@ class ScatterPlot:
                 end=1200,
                 value=600,
                 step=50,
-                width=200,
+                width=width,
+            ),
+            "bins_slider": pn.widgets.IntSlider(
+                name="Bins in marginal histograms",
+                start=10,
+                end=100,
+                value=30,
+                step=1,
+                width=width,
             ),
         }
         return controls
@@ -130,7 +138,7 @@ class ScatterPlot:
         return tooltips
 
     def create_marginal_histogram(
-        self, data: pd.Series, orientation: str, width: int, height: int
+        self, data: pd.Series, orientation: str, width: int, height: int, alpha: float, bins: int
     ) -> figure:
         """Create a histogram for marginal distribution."""
         # Remove NaN values and convert to numeric
@@ -160,7 +168,7 @@ class ScatterPlot:
             return p
             
         # Calculate histogram data
-        hist, edges = np.histogram(clean_data, bins=30)
+        hist, edges = np.histogram(clean_data, bins=bins)
         
         if orientation == "x":
             p = figure(
@@ -176,9 +184,9 @@ class ScatterPlot:
                 bottom=0,
                 left=edges[:-1],
                 right=edges[1:],
-                fill_color="navy",
+                fill_color="black",
                 line_color="white",
-                alpha=0.5,
+                alpha=alpha,
             )
             p.yaxis.visible = False
             p.xaxis.visible = False
@@ -197,9 +205,9 @@ class ScatterPlot:
                 right=hist,
                 top=edges[:-1],
                 bottom=edges[1:],
-                fill_color="navy",
+                fill_color="black",
                 line_color="white",
-                alpha=0.5,
+                alpha=alpha,
             )
             p.xaxis.visible = False
             p.yaxis.visible = False
@@ -218,6 +226,7 @@ class ScatterPlot:
         alpha: float,
         width: int,
         height: int,
+        bins: int = 30,  # number of bins for the marginal histograms
     ) -> gridplot:
         """Update the scatter plot with new parameters."""
         # Create a new figure for the main scatter plot
@@ -285,7 +294,7 @@ class ScatterPlot:
         try:
             if x_col != "Date" and x_col != "None":  # Skip histogram for Date column
                 x_hist = self.create_marginal_histogram(
-                    self.df_meta[x_col], "x", width=width, height=100
+                    self.df_meta[x_col], "x", width=width, height=100, alpha=alpha, bins=bins
                 )
                 x_hist.x_range = p.x_range  # Link x ranges
         except Exception as e:
@@ -296,7 +305,7 @@ class ScatterPlot:
         try:
             if y_col != "Date" and y_col != "None":  # Skip histogram for Date column
                 y_hist = self.create_marginal_histogram(
-                    self.df_meta[y_col], "y", width=100, height=height
+                    self.df_meta[y_col], "y", width=100, height=height, alpha=alpha, bins=bins
                 )
                 y_hist.y_range = p.y_range  # Link y ranges
         except Exception as e:

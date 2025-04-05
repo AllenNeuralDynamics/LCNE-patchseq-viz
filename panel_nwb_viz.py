@@ -196,14 +196,14 @@ class PatchSeqNWBApp(param.Parameterized):
         Create the scatter plot panel using the ScatterPlot component.
         """
         # Get plot controls from the scatter plot component
-        controls = self.scatter_plot.create_plot_controls()
+        controls = self.scatter_plot.create_plot_controls(width=180)
         
         # Add color palette selector
         controls["color_palette_select"] = pn.widgets.Select(
             name="Color Palette",
             options=list(COLOR_PALETTES.keys()),
             value="Viridis256",
-            width=200,
+            width=180,
         )
 
         # Create a reactive scatter plot that updates when controls change
@@ -219,6 +219,7 @@ class PatchSeqNWBApp(param.Parameterized):
             controls["alpha_slider"].param.value_throttled,
             controls["width_slider"].param.value_throttled,
             controls["height_slider"].param.value_throttled,
+            controls["bins_slider"].param.value_throttled,
         )
 
         return pn.Row(
@@ -228,21 +229,14 @@ class PatchSeqNWBApp(param.Parameterized):
                 controls["color_col_select"],
                 controls["size_col_select"],
                 pn.layout.Divider(margin=(10, 0, 10, 0)),
-                pn.Accordion(
-                    (
-                        "Appearance Settings",
-                        pn.Column(
-                            controls["color_palette_select"],
-                            controls["size_range_slider"],
-                            controls["size_gamma_slider"],
-                            controls["alpha_slider"],
-                            controls["width_slider"],
-                            controls["height_slider"],
-                        ),
-                    ),
-                    active=[1],  # Open by default
-                ),
-                margin=(0, 20, 20, 20),
+                controls["color_palette_select"],
+                controls["size_range_slider"],
+                controls["size_gamma_slider"],
+                controls["alpha_slider"],
+                controls["width_slider"],
+                controls["height_slider"],
+                controls["bins_slider"],
+                margin=(0, 20, 20, 0),  # top, right, bottom, left margins in pixels
             ),
             scatter_plot,
             margin=(0, 20, 20, 20),  # top, right, bottom, left margins in pixels
