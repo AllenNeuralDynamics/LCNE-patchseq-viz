@@ -15,7 +15,7 @@ from bokeh.layouts import column as bokeh_column
 from bokeh.models import BoxZoomTool, TapTool, HoverTool, ColorBar
 from bokeh.plotting import figure
 from bokeh.models import ColumnDataSource, CategoricalColorMapper, LinearColorMapper
-from bokeh.palettes import Viridis256
+from bokeh.palettes import Viridis256, Plasma256, Magma256, Inferno256, Cividis256, Turbo256, Category10, Category20, Category20b, Category20c
 
 from LCNE_patchseq_analysis.data_util.metadata import load_ephys_metadata
 from LCNE_patchseq_analysis.data_util.nwb import PatchSeqNWB
@@ -29,6 +29,15 @@ logger = logging.getLogger(__name__)
 pn.extension("tabulator")
 curdoc().title = "LC-NE Patch-seq Data Explorer"
 
+# Define available color palettes
+COLOR_PALETTES = {
+    'Viridis256': Viridis256,
+    'Plasma256': Plasma256,
+    'Magma256': Magma256,
+    'Inferno256': Inferno256,
+    'Cividis256': Cividis256,
+    'Turbo256': Turbo256,
+}
 
 class PatchSeqNWBApp(param.Parameterized):
     """
@@ -130,7 +139,7 @@ class PatchSeqNWBApp(param.Parameterized):
         return "<span style='background:lightgreen;'>Sweep passed QC!</span>"
     
     
-    def determine_color_mapping(self, color_mapping, p):
+    def determine_color_mapping(self, color_mapping, color_palette, p):
         if color_mapping == 'injection region':
             return {'field': color_mapping, 'transform': CategoricalColorMapper(
                 factors=list(REGION_COLOR_MAPPER.keys()),
@@ -144,7 +153,7 @@ class PatchSeqNWBApp(param.Parameterized):
                 # If conversion is successful, use linear color mapper
                 low = numeric_data.min()
                 high = numeric_data.max()
-                color_mapper = LinearColorMapper(palette=Viridis256, low=low, high=high)
+                color_mapper = LinearColorMapper(palette=color_palette, low=low, high=high)
                 color = {'field': color_mapping, 'transform': color_mapper}
                 
                 # Add a color bar
@@ -185,7 +194,7 @@ class PatchSeqNWBApp(param.Parameterized):
         
         return 10
 
-    def update_scatter_plot(self, x_col, y_col, color_col, size_col, size_range, size_gamma, alpha):
+    def update_scatter_plot(self, x_col, y_col, color_col, color_palette, size_col, size_range, size_gamma, alpha):
         # Create a new figure
         p = figure(
             x_axis_label=x_col, y_axis_label=y_col,
@@ -202,7 +211,7 @@ class PatchSeqNWBApp(param.Parameterized):
             source.data[x_col] = pd.to_datetime(pd.Series(source.data[x_col]), errors='coerce')
 
         # Determine color mapping
-        color = self.determine_color_mapping(color_col, p)
+        color = self.determine_color_mapping(color_col, COLOR_PALETTES[color_palette], p)
         
         # Determine size mapping
         size = self.determine_size_mapping(size_col, source, min_size=size_range[0], max_size=size_range[1], gamma=size_gamma)
@@ -288,6 +297,9 @@ class PatchSeqNWBApp(param.Parameterized):
             value="injection region",
             width=200
         )
+        color_palette_select = pn.widgets.Select(
+            name='Color Palette', options=list(COLOR_PALETTES.keys()), value='Viridis256', width=200
+        )
         size_col_select = pn.widgets.Select(
             name='Size Mapping', options=["None"] + sorted(list(self.df_meta.columns)), 
             value="None",
@@ -315,6 +327,7 @@ class PatchSeqNWBApp(param.Parameterized):
             x_axis_select.param.value,
             y_axis_select.param.value,
             color_col_select.param.value,
+            color_palette_select.param.value,
             size_col_select.param.value,
             size_range_slider.param.value_throttled,
             size_gamma_slider.param.value_throttled,
@@ -324,14 +337,15 @@ class PatchSeqNWBApp(param.Parameterized):
             pn.Column(
                 x_axis_select, 
                 y_axis_select, 
-                color_col_select, 
-                size_col_select,
+                color_col_select,
+                color_palette_select,
                 pn.layout.Divider(margin=(10, 0, 10, 0)),
+                size_col_select,
                 size_range_slider,
                 size_gamma_slider,
                 alpha_slider,
                 margin=(0, 20, 20, 20)
-            ),
+            ), 
             scatter_plot,
             margin=(0, 20, 20, 20),  # top, right, bottom, left margins in pixels
         )
