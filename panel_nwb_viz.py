@@ -160,6 +160,33 @@ class PatchSeqNWBApp(param.Parameterized):
                 p.add_layout(color_bar, 'right')
                 return color
         return "black"
+    
+    def determine_size_mapping(self, size_mapping, source, p):
+        if size_mapping == "None":
+            return 10
+        
+        if size_mapping in self.df_meta.columns:
+            numeric_data = pd.Series(pd.to_numeric(self.df_meta[size_mapping], errors='coerce'))
+            if not numeric_data.isna().all():
+                # Get the 5th and 95th percentiles of the numeric data
+                p5 = numeric_data.quantile(0.05)
+                p95 = numeric_data.quantile(0.95)
+                
+                # Normalize the data between 5th and 95th percentiles
+                normalized_sizes = numeric_data.clip(p5, p95).copy()
+                
+                # Map the normalized values to sizes between 10 and 20
+                min_size, max_size = 10, 20
+                normalized_sizes = min_size + (normalized_sizes - p5) / (p95 - p5) * (max_size - min_size)
+                
+                # Replace NaN values with the minimum size
+                normalized_sizes = normalized_sizes.fillna(min_size)
+                
+                # Add the size values to the source data
+                source.data['size_values'] = normalized_sizes
+                return 'size_values'
+        
+        return 10
 
     def update_scatter_plot(self, x_col, y_col, color_mapping, size_mapping):
         # Create a new figure
@@ -179,10 +206,13 @@ class PatchSeqNWBApp(param.Parameterized):
 
         # Determine color mapping
         color = self.determine_color_mapping(color_mapping, source, p)
+        
+        # Determine size mapping
+        size = self.determine_size_mapping(size_mapping, source, p)
 
         # Add scatter glyph using the data source
         p.scatter(
-            x=x_col, y=y_col, source=source, size=10, color=color, alpha=0.7
+            x=x_col, y=y_col, source=source, size=size, color=color, alpha=0.7
         )
 
         # Flip the y-axis if y_col == "y" (depth)
@@ -251,7 +281,8 @@ class PatchSeqNWBApp(param.Parameterized):
             width=200
         )
         size_mapping_select = pn.widgets.Select(
-            name='Size Mapping', options=["None"] + sorted(list(self.df_meta.columns)), value="Date",
+            name='Size Mapping', options=["None"] + sorted(list(self.df_meta.columns)), 
+            value="None",
             width=200
         )
 
