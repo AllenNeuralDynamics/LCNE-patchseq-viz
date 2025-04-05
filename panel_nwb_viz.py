@@ -315,10 +315,15 @@ class PatchSeqNWBApp(param.Parameterized):
             if s3_url:
                 return pn.pane.PNG(s3_url, sizing_mode="stretch_width")
             else:
-                return pn.pane.Markdown("No S3 cell summary plot available")
+                return pn.pane.Markdown(
+                    "### Select the table or the scatter plot to view the cell summary plot.")
 
-        s3_cell_summary_plot = pn.bind(
-            get_s3_cell_summary_plot, ephys_roi_id=self.data_holder.param.ephys_roi_id
+        s3_cell_summary_plot = pn.Column(
+            pn.pane.Markdown("## Cell summary plot"),
+            pn.bind(
+                get_s3_cell_summary_plot, ephys_roi_id=self.data_holder.param.ephys_roi_id
+            ),
+            sizing_mode="stretch_width",
         )
 
         cell_selector_panel = pn.Column(
