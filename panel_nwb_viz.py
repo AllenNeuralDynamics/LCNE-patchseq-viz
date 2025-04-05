@@ -56,8 +56,15 @@ class PatchSeqNWBApp(param.Parameterized):
         # Load and prepare metadata.
         self.df_meta = load_ephys_metadata(if_with_efel=True)
         self.df_meta = self.df_meta.rename(
-            columns={col: col.replace("_tab_master", "") for col in self.df_meta.columns}
+            columns={col: col.replace("_tab_master", "") for col in self.df_meta.columns},
+        ).rename(
+            columns={
+                "x": "X (A --> P)",
+                "y": "Y (D --> V)",
+                "z": "Z (L --> R)",
+            }
         ).sort_values(["injection region"])
+                
         self.cell_key = [
             "Date",
             "jem-id_cell_specimen",
@@ -65,7 +72,7 @@ class PatchSeqNWBApp(param.Parameterized):
             "ephys_qc",
             "LC_targeting",
             "injection region",
-            "y",
+            "Y (D --> V)",
         ]
 
         # Create the cell selector panel once.
@@ -222,7 +229,7 @@ class PatchSeqNWBApp(param.Parameterized):
         )
 
         # Flip the y-axis if y_col == "y" (depth)
-        if y_col == "y":
+        if y_col == "Y (D --> V)":
             p.y_range.flipped = True
 
         # Add HoverTool with tooltips
@@ -289,7 +296,7 @@ class PatchSeqNWBApp(param.Parameterized):
             width=200
         )
         y_axis_select = pn.widgets.Select(
-            name='Y-Axis', options=sorted(list(self.df_meta.columns)), value="y",
+            name='Y-Axis', options=sorted(list(self.df_meta.columns)), value="Y (D --> V)",
             width=200
         )
         color_col_select = pn.widgets.Select(
@@ -338,9 +345,9 @@ class PatchSeqNWBApp(param.Parameterized):
                 x_axis_select, 
                 y_axis_select, 
                 color_col_select,
-                color_palette_select,
-                pn.layout.Divider(margin=(10, 0, 10, 0)),
                 size_col_select,
+                pn.layout.Divider(margin=(10, 0, 10, 0)),
+                color_palette_select,
                 size_range_slider,
                 size_gamma_slider,
                 alpha_slider,
