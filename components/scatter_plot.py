@@ -148,6 +148,13 @@ class ScatterPlot:
                 width=width,
                 disabled=False,
             ),
+            "distribution_plot_height": pn.widgets.IntSlider(
+                name="Distribution plot height",
+                start=100,
+                end=1000,
+                value=200,
+                step=50,
+            ),
         }
         
         # Link the GMM checkbox to enable/disable the component sliders
@@ -172,10 +179,10 @@ class ScatterPlot:
              <div style="text-align: left; flex: auto; white-space: nowrap; margin: 0 10px">
                     <span style="font-size: 17px;">
                         <b>@Date (@{{injection region}}) @{{jem-id_cell_specimen}}, #@{{ephys_roi_id}}</b><br>
-                        <b>X = @{{{x_col}}}</b> ({x_col})<br>
-                        <b>Y = @{{{y_col}}}</b> ({y_col})<br>
-                        <b> Color = @{{{color_col}}}</b> ({color_col})<br>
-                        <b> Size = @{{{size_col}}}</b> ({size_col})<br>
+                        <b>X = @{{{x_col}}}</b> [{x_col}]<br>
+                        <b>Y = @{{{y_col}}}</b> [{y_col}]<br>
+                        <b> Color = @{{{color_col}}}</b> [{color_col}]<br>
+                        <b> Size = @{{{size_col}}}</b> [{size_col}]<br>
                     </span>
              </div>
              <div>
@@ -219,11 +226,9 @@ class ScatterPlot:
         if orientation == "x":
             x_range = (edges[0], edges[-1])
             y_range = (0, hist.max() * 1.1)
-            quad_params = {"top": hist, "bottom": 0, "left": edges[:-1], "right": edges[1:]}
         else:  # "y" orientation
             x_range = (0, hist.max() * 1.1)
             y_range = (edges[0], edges[-1])
-            quad_params = {"left": 0, "right": hist, "top": edges[:-1], "bottom": edges[1:]}
 
         # Create the figure
         p = figure(
@@ -235,8 +240,23 @@ class ScatterPlot:
             y_range=y_range,
         )
 
-        # Plot the histogram
-        p.quad(**quad_params, fill_color="gray", line_color="white", alpha=0.9)
+        # Plot the histogram using vbar/hbar (Bokeh's bar plot) instead of quad
+        if orientation == "x":
+            # Use vbar for x-orientation
+            p.vbar(x=[(edges[i] + edges[i+1])/2 for i in range(len(edges)-1)],
+                   top=hist,
+                   width=(edges[1]-edges[0]) * 0.9,  # Slightly narrower than bin width
+                   fill_color="gray",
+                   line_color="white",
+                   alpha=0.9)
+        else:  # "y" orientation
+            # Use hbar for y-orientation
+            p.hbar(y=[(edges[i] + edges[i+1])/2 for i in range(len(edges)-1)],
+                   right=hist,
+                   height=(edges[1]-edges[0]) * 0.9,  # Slightly narrower than bin width
+                   fill_color="gray",
+                   line_color="white",
+                   alpha=0.9)
 
         # Optional: Plot Gaussian Mixture Model overlay
         if show_gmm:
@@ -318,7 +338,10 @@ class ScatterPlot:
 
         # Add HoverTool with tooltips
         tooltips = self.create_tooltips(x_col, y_col, color_col, size_col)
-        hovertool = HoverTool(tooltips=tooltips)
+        hovertool = HoverTool(
+            tooltips=tooltips,
+            attachment="right",  # Fix tooltip to the right of the plot
+        )
         p.add_tools(hovertool)
 
         # Define callback to update ephys_roi_id on point tap
@@ -335,8 +358,7 @@ class ScatterPlot:
         source.selected.on_change("indices", update_ephys_roi_id)
         
         # Set the default tool activated on drag to be box zoom
-        if p.toolbar.active_drag is None:
-            p.toolbar.active_drag = p.select_one(BoxZoomTool)
+        p.toolbar.active_drag = p.select_one(BoxZoomTool)
 
         # Set axis label font sizes
         p.xaxis.axis_label_text_font_size = "14pt"
