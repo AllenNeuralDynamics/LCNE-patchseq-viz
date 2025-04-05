@@ -319,7 +319,14 @@ class PatchSeqNWBApp(param.Parameterized):
                     "### Select the table or the scatter plot to view the cell summary plot.")
 
         s3_cell_summary_plot = pn.Column(
-            pn.pane.Markdown("## Cell summary plot"),
+            pn.bind(
+                lambda ephys_roi_id: pn.pane.Markdown(
+                    f"## Cell summary plot" + 
+                    (f" for {ephys_roi_id}" 
+                    if ephys_roi_id else "")
+                ),
+                ephys_roi_id=self.data_holder.param.ephys_roi_id
+            ),
             pn.bind(
                 get_s3_cell_summary_plot, ephys_roi_id=self.data_holder.param.ephys_roi_id
             ),
@@ -524,7 +531,6 @@ class PatchSeqNWBApp(param.Parameterized):
             margin=(20, 20, 0, 20),  # top, right, bottom, left margins in pixels
         )
         return layout
-
 
 app = PatchSeqNWBApp()
 layout = app.main_layout()

@@ -13,6 +13,7 @@ import numpy as np
 
 from LCNE_patchseq_analysis.panel_app.components.color_mapping import ColorMapping
 from LCNE_patchseq_analysis.panel_app.components.size_mapping import SizeMapping
+from LCNE_patchseq_analysis.pipeline_util.s3 import get_public_url_cell_summary
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,23 @@ class ScatterPlot:
         self.color_mapping = ColorMapping(df_meta)
         self.size_mapping = SizeMapping(df_meta)
         self.data_holder = data_holder
+        # Add cell summary URLs to dataframe
+        self._add_cell_summary_urls()
+
+    def _add_cell_summary_urls(self):
+        """Add cell summary URLs to the dataframe."""
+        # Create a new column for cell summary URLs
+        self.df_meta['cell_summary_url'] = None
+        
+        # Get URLs for each ephys_roi_id
+        for idx, row in self.df_meta.iterrows():
+            ephys_roi_id = str(int(row['ephys_roi_id']))
+            try:
+                url = get_public_url_cell_summary(ephys_roi_id, if_check_exists=False)
+                self.df_meta.at[idx, 'cell_summary_url'] = url
+            except Exception as e:
+                logger.warning(f"Could not get URL for ephys_roi_id {ephys_roi_id}: {e}")
+                self.df_meta.at[idx, 'cell_summary_url'] = None
 
     def create_plot_controls(self, width: int = 180) -> Dict[str, Any]:
         """Create the control widgets for the scatter plot."""
@@ -149,26 +167,21 @@ class ScatterPlot:
         self, x_col: str, y_col: str, color_col: str, size_col: str
     ) -> List[Tuple[str, str]]:
         """Create tooltips for the hover tool."""
-        tooltips = [
-            ("Date", "@Date"),
-            ("jem-id_cell_specimen", "@{jem-id_cell_specimen}"),
-            ("Cell ID", "@{ephys_roi_id}"),
-            ("LC_targeting", "@LC_targeting"),
-            ("injection region", "@{injection region}"),
-            ("---", "---"),
-            ("x", f"@{{{x_col}}}"),
-            ("y", f"@{{{y_col}}}"),
-        ]
         
-        # Add color and size mapping values to tooltips if they are selected
-        if color_col != "None":
-            tooltips.append(
-                (f"Color ({color_col})", f"@{{{color_col}}}")
-            )
-        if size_col != "None":
-            tooltips.append(
-                (f"Size ({size_col})", f"@{{{size_col}}}")
-            )
+        tooltips = f"""
+             <div style="text-align: left; flex: auto; white-space: nowrap; margin: 0 10px">
+                    <span style="font-size: 17px;">
+                        <b>@Date (@{{injection region}}) @{{jem-id_cell_specimen}}, #@{{ephys_roi_id}}</b><br>
+                        <b>X = @{{{x_col}}}</b> ({x_col})<br>
+                        <b>Y = @{{{y_col}}}</b> ({y_col})<br>
+                        <b> Color = @{{{color_col}}}</b> ({color_col})<br>
+                        <b> Size = @{{{size_col}}}</b> ({size_col})<br>
+                    </span>
+             </div>
+             <div>
+                 <img src="@cell_summary_url{{safe}}" alt="Cell Summary" style="width: 800px; height: auto;">
+             </div>
+             """
             
         return tooltips
 
@@ -322,7 +335,8 @@ class ScatterPlot:
         source.selected.on_change("indices", update_ephys_roi_id)
         
         # Set the default tool activated on drag to be box zoom
-        p.toolbar.active_drag = p.select_one(BoxZoomTool)
+        if p.toolbar.active_drag is None:
+            p.toolbar.active_drag = p.select_one(BoxZoomTool)
 
         # Set axis label font sizes
         p.xaxis.axis_label_text_font_size = "14pt"
