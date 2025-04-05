@@ -113,6 +113,10 @@ class PatchSeqNWBApp(param.Parameterized):
             "injection region",
             "Y (D --> V)",
         ]
+        
+        # Turn Date to datetime
+        self.df_meta.loc[:, "Date_str"] = self.df_meta["Date"]  # Keep the original Date as string
+        self.df_meta.loc[:, "Date"] = pd.to_datetime(self.df_meta["Date"], errors="coerce")
 
         # Initialize scatter plot component
         self.scatter_plot = ScatterPlot(self.df_meta, self.data_holder)
@@ -220,6 +224,7 @@ class PatchSeqNWBApp(param.Parameterized):
             controls["width_slider"].param.value_throttled,
             controls["height_slider"].param.value_throttled,
             controls["bins_slider"].param.value_throttled,
+            controls["hist_height_slider"].param.value_throttled,
             controls["show_gmm"].param.value,
             controls["n_components_x"].param.value,
             controls["n_components_y"].param.value,
@@ -248,6 +253,7 @@ class PatchSeqNWBApp(param.Parameterized):
                          controls["alpha_slider"],
                          controls["width_slider"],
                          controls["height_slider"],
+                         controls["hist_height_slider"],
                      )),
                     active=[1],
                 ),

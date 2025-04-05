@@ -6,7 +6,7 @@ from typing import List, Tuple, Any, Dict
 
 import pandas as pd
 import panel as pn
-from bokeh.models import HoverTool, ColumnDataSource, BoxZoomTool
+from bokeh.models import HoverTool, ColumnDataSource, BoxZoomTool, DatetimeTickFormatter
 from bokeh.plotting import figure
 from bokeh.layouts import gridplot
 import numpy as np
@@ -56,7 +56,7 @@ class ScatterPlot:
             "x_axis_select": pn.widgets.Select(
                 name="X Axis",
                 options=all_cols,
-                value="first_spike_spike_half_width @ long_square_rheo, min",
+                value="first_spike_AP_duration_half_width @ long_square_rheo, min",
                 width=width,
             ),
             "y_axis_select": pn.widgets.Select(
@@ -148,12 +148,12 @@ class ScatterPlot:
                 width=width,
                 disabled=False,
             ),
-            "distribution_plot_height": pn.widgets.IntSlider(
+            "hist_height_slider": pn.widgets.IntSlider(
                 name="Distribution plot height",
-                start=100,
-                end=1000,
-                value=200,
-                step=50,
+                start=50,
+                end=300,
+                value=100,
+                step=10,
             ),
         }
         
@@ -178,7 +178,7 @@ class ScatterPlot:
         tooltips = f"""
              <div style="text-align: left; flex: auto; white-space: nowrap; margin: 0 10px">
                     <span style="font-size: 17px;">
-                        <b>@Date (@{{injection region}}) @{{jem-id_cell_specimen}}, #@{{ephys_roi_id}}</b><br>
+                        <b>@Date_str, @{{injection region}}, @{{jem-id_cell_specimen}}, #@{{ephys_roi_id}}</b><br>
                         <b>X = @{{{x_col}}}</b> [{x_col}]<br>
                         <b>Y = @{{{y_col}}}</b> [{y_col}]<br>
                         <b> Color = @{{{color_col}}}</b> [{color_col}]<br>
@@ -300,6 +300,7 @@ class ScatterPlot:
         width: int,
         height: int,
         bins: int = 30,
+        hist_height_slider: int = 100,
         show_gmm: bool = False,
         n_components_x: int = 2,
         n_components_y: int = 1,
@@ -319,8 +320,14 @@ class ScatterPlot:
         
         # If any column is Date, convert it to datetime
         if x_col == "Date":
-            source.data[x_col] = pd.to_datetime(pd.Series(source.data[x_col]), errors="coerce")
-
+            source.data[x_col] = pd.to_datetime(
+                pd.Series(source.data[x_col]), errors="coerce")
+            p.xaxis.formatter = DatetimeTickFormatter(
+                years="%Y",
+                months="%Y-%m",
+                days="%Y-%m-%d",
+            )
+            
         # Determine color mapping
         color = self.color_mapping.determine_color_mapping(color_col, color_palette, p)
         
@@ -341,8 +348,13 @@ class ScatterPlot:
         hovertool = HoverTool(
             tooltips=tooltips,
             attachment="right",  # Fix tooltip to the right of the plot
+            formatters={
+                '@Date': "datetime"
+            }
         )
+
         p.add_tools(hovertool)
+                
 
         # Define callback to update ephys_roi_id on point tap
         def update_ephys_roi_id(attr, old, new):
@@ -373,7 +385,7 @@ class ScatterPlot:
         try:
             if x_col != "Date" and x_col != "None":  # Skip histogram for Date column
                 x_hist = self.create_marginal_histogram(
-                    self.df_meta[x_col], "x", width=width, height=100, alpha=alpha, bins=bins,
+                    self.df_meta[x_col], "x", width=width, height=hist_height_slider, alpha=alpha, bins=bins,
                     show_gmm=show_gmm, n_components=n_components_x
                 )
                 x_hist.x_range = p.x_range  # Link x ranges
@@ -385,7 +397,7 @@ class ScatterPlot:
         try:
             if y_col != "Date" and y_col != "None":  # Skip histogram for Date column
                 y_hist = self.create_marginal_histogram(
-                    self.df_meta[y_col], "y", width=100, height=height, alpha=alpha, bins=bins,
+                    self.df_meta[y_col], "y", width=hist_height_slider, height=height, alpha=alpha, bins=bins,
                     show_gmm=show_gmm, n_components=n_components_y
                 )
                 y_hist.y_range = p.y_range  # Link y ranges
