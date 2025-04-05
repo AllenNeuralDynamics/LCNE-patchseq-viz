@@ -109,7 +109,7 @@ class ScatterPlot:
             ),
             "show_gmm": pn.widgets.Checkbox(
                 name="Show Gaussian Mixture Model",
-                value=False,
+                value=True,
                 width=width,
             ),
             "n_components_x": pn.widgets.IntSlider(
@@ -119,6 +119,7 @@ class ScatterPlot:
                 value=2,
                 step=1,
                 width=width,
+                disabled=False,
             ),
             "n_components_y": pn.widgets.IntSlider(
                 name="Number of Gaussian Components",
@@ -127,8 +128,21 @@ class ScatterPlot:
                 value=1,
                 step=1,
                 width=width,
+                disabled=False,
             ),
         }
+        
+        # Link the GMM checkbox to enable/disable the component sliders
+        def toggle_gmm_components(event):
+            controls["n_components_x"].disabled = not event.new
+            controls["n_components_y"].disabled = not event.new
+            
+        controls["show_gmm"].param.watch(toggle_gmm_components, "value")
+        
+        # Initialize the disabled state based on the initial checkbox value
+        controls["n_components_x"].disabled = not controls["show_gmm"].value
+        controls["n_components_y"].disabled = not controls["show_gmm"].value
+        
         return controls
 
     def create_tooltips(
@@ -165,120 +179,80 @@ class ScatterPlot:
         """Create a histogram for marginal distribution with optional GMM overlay."""
         # Remove NaN values and convert to numeric
         clean_data = pd.to_numeric(data, errors='coerce').dropna()
-        
-        if len(clean_data) == 0:
-            # If no valid data, create empty plot
-            if orientation == "x":
-                p = figure(
-                    height=height,
-                    width=width,
-                    tools="",
-                    toolbar_location=None,
-                    x_range=(0, 1),
-                    y_range=(0, 1),
-                )
-            else:
-                p = figure(
-                    height=height,
-                    width=width,
-                    tools="",
-                    toolbar_location=None,
-                    x_range=(0, 1),
-                    y_range=(0, 1),
-                )
-            p.text(x=0.5, y=0.5, text=["No valid data"], text_align="center", text_baseline="middle")
+
+        # If no valid data, create an empty plot
+        if clean_data.empty:
+            p = figure(
+                height=height,
+                width=width,
+                tools="",
+                toolbar_location=None,
+                x_range=(0, 1),
+                y_range=(0, 1),
+            )
+            p.text(
+                x=0.5,
+                y=0.5,
+                text=["No valid data"],
+                text_align="center",
+                text_baseline="middle",
+            )
             return p
-            
-        # Calculate histogram data
+
+        # Calculate histogram data (independent of orientation)
         hist, edges = np.histogram(clean_data, bins=bins, density=True)
-        
+
+        # Set axis ranges and quad parameters based on orientation
         if orientation == "x":
-            p = figure(
-                height=height,
-                width=width,
-                tools="",
-                toolbar_location=None,
-                x_range=(edges[0], edges[-1]),
-                y_range=(0, hist.max() * 1.1),
-            )
-            p.quad(
-                top=hist,
-                bottom=0,
-                left=edges[:-1],
-                right=edges[1:],
-                fill_color="black",
-                line_color="white",
-                alpha=alpha,
-            )
-            
-            if show_gmm:
-                from sklearn.mixture import GaussianMixture
-                # Fit GMM
-                gmm = GaussianMixture(n_components=n_components)
-                gmm.fit(clean_data.values.reshape(-1, 1))
-                
-                # Create points for GMM curve
-                x = np.linspace(edges[0], edges[-1], 1000)
-                y = np.exp(gmm.score_samples(x.reshape(-1, 1)))
-                
-                # Plot GMM
-                p.line(x, y, line_color="red", line_width=2, alpha=0.8)
-                
-                # Plot individual components
-                for i in range(n_components):
-                    mean = gmm.means_[i][0]
-                    std = np.sqrt(gmm.covariances_[i][0][0])
-                    weight = gmm.weights_[i]
-                    component = weight * np.exp(-0.5 * ((x - mean) / std) ** 2) / (std * np.sqrt(2 * np.pi))
-                    p.line(x, component, line_color="blue", line_width=1, alpha=0.5, line_dash="dashed")
-            
-            p.yaxis.visible = False
-            p.xaxis.visible = False
-            p.grid.visible = False
-        else:  # y orientation
-            p = figure(
-                height=height,
-                width=width,
-                tools="",
-                toolbar_location=None,
-                x_range=(0, hist.max() * 1.1),
-                y_range=(edges[0], edges[-1]),
-            )
-            p.quad(
-                left=0,
-                right=hist,
-                top=edges[:-1],
-                bottom=edges[1:],
-                fill_color="black",
-                line_color="white",
-                alpha=alpha,
-            )
-            
-            if show_gmm:
-                from sklearn.mixture import GaussianMixture
-                # Fit GMM
-                gmm = GaussianMixture(n_components=n_components)
-                gmm.fit(clean_data.values.reshape(-1, 1))
-                
-                # Create points for GMM curve
-                y = np.linspace(edges[0], edges[-1], 1000)
-                x = np.exp(gmm.score_samples(y.reshape(-1, 1)))
-                
-                # Plot GMM
-                p.line(x, y, line_color="red", line_width=2, alpha=0.8)
-                
-                # Plot individual components
-                for i in range(n_components):
-                    mean = gmm.means_[i][0]
-                    std = np.sqrt(gmm.covariances_[i][0][0])
-                    weight = gmm.weights_[i]
-                    component = weight * np.exp(-0.5 * ((y - mean) / std) ** 2) / (std * np.sqrt(2 * np.pi))
-                    p.line(component, y, line_color="blue", line_width=1, alpha=0.5, line_dash="dashed")
-            
-            p.xaxis.visible = False
-            p.yaxis.visible = False
-            p.grid.visible = False
+            x_range = (edges[0], edges[-1])
+            y_range = (0, hist.max() * 1.1)
+            quad_params = {"top": hist, "bottom": 0, "left": edges[:-1], "right": edges[1:]}
+        else:  # "y" orientation
+            x_range = (0, hist.max() * 1.1)
+            y_range = (edges[0], edges[-1])
+            quad_params = {"left": 0, "right": hist, "top": edges[:-1], "bottom": edges[1:]}
+
+        # Create the figure
+        p = figure(
+            height=height,
+            width=width,
+            tools="",
+            toolbar_location=None,
+            x_range=x_range,
+            y_range=y_range,
+        )
+
+        # Plot the histogram
+        p.quad(**quad_params, fill_color="gray", line_color="white", alpha=0.9)
+
+        # Optional: Plot Gaussian Mixture Model overlay
+        if show_gmm:
+            from sklearn.mixture import GaussianMixture
+
+            gmm = GaussianMixture(n_components=n_components)
+            gmm.fit(clean_data.values.reshape(-1, 1))
+            domain = np.linspace(edges[0], edges[-1], 1000)
+            density = np.exp(gmm.score_samples(domain.reshape(-1, 1)))
+
+            p.line(*((domain, density) if orientation == "x" else (density, domain)),
+                   line_color="black", line_width=4, alpha=0.9)
+
+            # Plot individual GMM components
+            for i in range(n_components):
+                mean = gmm.means_[i][0]
+                std = np.sqrt(gmm.covariances_[i][0][0])
+                weight = gmm.weights_[i]
+                comp_density = weight * \
+                    np.exp(-0.5 * ((domain - mean) / std) ** 2) / (std * np.sqrt(2 * np.pi))
+                p.line(*((domain, comp_density) if orientation == "x" else (comp_density, domain)),
+                       line_color="black", line_width=2, alpha=0.9, line_dash="dashed")
+
+        # Hide axes and grid
+        p.xaxis.visible = False
+        p.yaxis.visible = False
+        p.grid.visible = False
         return p
+
 
     def update_scatter_plot(
         self,
