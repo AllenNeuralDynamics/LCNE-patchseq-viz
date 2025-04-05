@@ -37,6 +37,10 @@ COLOR_PALETTES = {
     'Inferno256': Inferno256,
     'Cividis256': Cividis256,
     'Turbo256': Turbo256,
+    'Category10': Category10,
+    'Category20': Category20,
+    'Category20b': Category20b,
+    'Category20c': Category20c,
 }
 
 class PatchSeqNWBApp(param.Parameterized):
@@ -146,35 +150,57 @@ class PatchSeqNWBApp(param.Parameterized):
         return "<span style='background:lightgreen;'>Sweep passed QC!</span>"
     
     
+    def add_color_bar(self, color_mapper, title, p):
+        """Add a color bar to the plot with consistent styling."""
+        color_bar = ColorBar(
+            color_mapper=color_mapper,
+            label_standoff=12,
+            border_line_color=None,
+            location=(0, 0),
+            title=title,
+            title_text_font_size="12pt",
+            major_label_text_font_size="10pt"
+        )
+        p.add_layout(color_bar, 'right')
+        return color_bar
+
     def determine_color_mapping(self, color_mapping, color_palette, p):
         if color_mapping == 'injection region':
-            return {'field': color_mapping, 'transform': CategoricalColorMapper(
-                factors=list(REGION_COLOR_MAPPER.keys()),
-                palette=list(REGION_COLOR_MAPPER.values())
-            )}
+            color_mapper = {
+                key: value for key, value in REGION_COLOR_MAPPER.items() 
+                if key in self.df_meta["injection region"].unique()
+            }
+            color_mapper = CategoricalColorMapper(
+                factors=list(color_mapper.keys()),
+                palette=list(color_mapper.values())
+            )
             
-        if color_mapping in self.df_meta.columns:
-            # Try to convert the column to numeric
-            numeric_data = pd.Series(pd.to_numeric(self.df_meta[color_mapping], errors='coerce'))
-            if not numeric_data.isna().all():
-                # If conversion is successful, use linear color mapper
-                low = numeric_data.min()
-                high = numeric_data.max()
-                color_mapper = LinearColorMapper(palette=color_palette, low=low, high=high)
-                color = {'field': color_mapping, 'transform': color_mapper}
-                
-                # Add a color bar
-                color_bar = ColorBar(
-                    color_mapper=color_mapper,
-                    label_standoff=12,
-                    border_line_color=None,
-                    location=(0, 0),
-                    title=color_mapping,
-                    title_text_font_size="12pt",
-                    major_label_text_font_size="10pt"
-                )
-                p.add_layout(color_bar, 'right')
-                return color
+            # Add a color bar for categorical data
+            self.add_color_bar(color_mapper, color_mapping, p)
+            return {'field': color_mapping, 'transform': color_mapper}
+            
+        # If categorical (nunique <= 10), use categorical color mapper
+        if self.df_meta[color_mapping].nunique() <= 10:
+            color_mapper = CategoricalColorMapper(
+                factors=list(self.df_meta[color_mapping].unique()),
+                palette=color_palette
+            )
+            self.add_color_bar(color_mapper, color_mapping, p)
+            return {'field': color_mapping, 'transform': color_mapper}
+        
+        # Try to convert the column to numeric
+        numeric_data = pd.Series(pd.to_numeric(self.df_meta[color_mapping], errors='coerce'))
+        if not numeric_data.isna().all():
+            # If conversion is successful, use linear color mapper
+            low = numeric_data.min()
+            high = numeric_data.max()
+            color_mapper = LinearColorMapper(palette=color_palette, low=low, high=high)
+            color = {'field': color_mapping, 'transform': color_mapper}
+            
+            # Add a color bar
+            self.add_color_bar(color_mapper, color_mapping, p)
+            return color
+            
         return "black"
     
     def determine_size_mapping(self, size_mapping, source, min_size=10, max_size=20, gamma=1):
