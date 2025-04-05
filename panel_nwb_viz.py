@@ -68,6 +68,8 @@ class PatchSeqNWBApp(param.Parameterized):
                 "z": "Z (L --> R)",
             }
         ).sort_values(["injection region"])
+        
+        self.df_meta["LC_targeting"].fillna("unknown", inplace=True)
                 
         self.cell_key = [
             "Date",
@@ -183,7 +185,7 @@ class PatchSeqNWBApp(param.Parameterized):
         if self.df_meta[color_mapping].nunique() <= 10:
             color_mapper = CategoricalColorMapper(
                 factors=list(self.df_meta[color_mapping].unique()),
-                palette=color_palette
+                palette=color_palette[self.df_meta[color_mapping].nunique()],
             )
             self.add_color_bar(color_mapper, color_mapping, p)
             return {'field': color_mapping, 'transform': color_mapper}
@@ -373,10 +375,15 @@ class PatchSeqNWBApp(param.Parameterized):
                 color_col_select,
                 size_col_select,
                 pn.layout.Divider(margin=(10, 0, 10, 0)),
-                color_palette_select,
-                size_range_slider,
-                size_gamma_slider,
-                alpha_slider,
+                pn.Accordion(
+                    ("Appearance Settings", pn.Column(
+                        color_palette_select,
+                        size_range_slider,
+                        size_gamma_slider,
+                        alpha_slider,
+                    )),
+                    active=[1],  # Open by default
+                ),
                 margin=(0, 20, 20, 20)
             ), 
             scatter_plot,
