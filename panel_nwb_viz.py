@@ -71,10 +71,16 @@ class PatchSeqNWBApp(param.Parameterized):
     """
 
     class DataHolder(param.Parameterized):
+        """
+        Holder for currently selected cell ID and sweep number.
+        """
         ephys_roi_id = param.String(default="")
         sweep_number_selected = param.Integer(default=0)
 
     def __init__(self):
+        """
+        Initialize the PatchSeqNWBApp.
+        """
         # Holder for currently selected cell ID.
         self.data_holder = PatchSeqNWBApp.DataHolder()
 
@@ -111,6 +117,9 @@ class PatchSeqNWBApp(param.Parameterized):
 
     @staticmethod
     def update_bokeh(raw, sweep, downsample_factor=3):
+        """
+        Update the Bokeh plot for a given sweep.
+        """
         trace = raw.get_raw_trace(sweep)[::downsample_factor]
         stimulus = raw.get_stimulus(sweep)[::downsample_factor]
         time = raw.get_time(sweep)[::downsample_factor]
@@ -191,6 +200,9 @@ class PatchSeqNWBApp(param.Parameterized):
         return color_bar
 
     def determine_color_mapping(self, color_mapping, color_palette, p):
+        """
+        Determine the color mapping for the scatter plot.
+        """
         if color_mapping == "injection region":
             color_mapper = {
                 key: value
@@ -230,6 +242,9 @@ class PatchSeqNWBApp(param.Parameterized):
         return "black"
 
     def determine_size_mapping(self, size_mapping, source, min_size=10, max_size=20, gamma=1):
+        """
+        Determine the size mapping for the scatter plot.
+        """
         if size_mapping == "None":
             return 10
 
