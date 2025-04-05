@@ -229,13 +229,13 @@ class PatchSeqNWBApp(param.Parameterized):
         
         return 10
 
-    def update_scatter_plot(self, x_col, y_col, color_col, color_palette, size_col, size_range, size_gamma, alpha):
+    def update_scatter_plot(self, x_col, y_col, color_col, color_palette, size_col, size_range, size_gamma, alpha, width, height):
         # Create a new figure
         p = figure(
             x_axis_label=x_col, y_axis_label=y_col,
             tools="pan,wheel_zoom,box_zoom,reset,tap",  # ensure tap tool is included
-            height=500,
-            width=650,
+            height=height,
+            width=width,
         )
 
         # Create ColumnDataSource from the dataframe
@@ -332,9 +332,6 @@ class PatchSeqNWBApp(param.Parameterized):
             value="injection region",
             width=200
         )
-        color_palette_select = pn.widgets.Select(
-            name='Color Palette', options=list(COLOR_PALETTES.keys()), value='Viridis256', width=200
-        )
         size_col_select = pn.widgets.Select(
             name='Size Mapping', options=["None"] + sorted(list(self.df_meta.columns)), 
             value="None",
@@ -355,6 +352,17 @@ class PatchSeqNWBApp(param.Parameterized):
         size_gamma_slider = pn.widgets.FloatSlider(
             name='Size Gamma', value=1, start=0.0, end=5.0, step=0.01, width=200
         )
+        color_palette_select = pn.widgets.Select(
+            name='Color Palette', options=list(COLOR_PALETTES.keys()), value='Viridis256', width=200
+        )
+        
+        # Add plot size controls
+        width_slider = pn.widgets.IntSlider(
+            name='Plot Width', value=650, start=400, end=1200, step=50, width=200
+        )
+        height_slider = pn.widgets.IntSlider(
+            name='Plot Height', value=500, start=300, end=1000, step=50, width=200
+        )
 
         # Create a reactive scatter plot that updates when axis selections change
         scatter_plot = pn.bind(
@@ -367,6 +375,8 @@ class PatchSeqNWBApp(param.Parameterized):
             size_range_slider.param.value_throttled,
             size_gamma_slider.param.value_throttled,
             alpha_slider.param.value_throttled,
+            width_slider.param.value_throttled,
+            height_slider.param.value_throttled,
         )
         return pn.Row(
             pn.Column(
@@ -381,6 +391,8 @@ class PatchSeqNWBApp(param.Parameterized):
                         size_range_slider,
                         size_gamma_slider,
                         alpha_slider,
+                        width_slider,
+                        height_slider,
                     )),
                     active=[1],  # Open by default
                 ),
