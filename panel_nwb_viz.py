@@ -231,7 +231,11 @@ class PatchSeqNWBApp(param.Parameterized):
                 controls["y_axis_select"],
                 pn.layout.Divider(margin=(5, 0, 5, 0)),
                 controls["color_col_select"],
+                controls["color_palette_select"],
+                pn.layout.Divider(margin=(5, 0, 5, 0)),
                 controls["size_col_select"],
+                controls["size_range_slider"],
+                controls["size_gamma_slider"],
                 pn.layout.Divider(margin=(5, 0, 5, 0)),
                 controls["bins_slider"],
                 controls["show_gmm"],
@@ -241,9 +245,6 @@ class PatchSeqNWBApp(param.Parameterized):
                 pn.Accordion(
                     ("Plot settings",
                      pn.Column(
-                         controls["color_palette_select"],
-                         controls["size_range_slider"],
-                         controls["size_gamma_slider"],
                          controls["alpha_slider"],
                          controls["width_slider"],
                          controls["height_slider"],

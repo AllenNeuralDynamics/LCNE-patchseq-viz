@@ -100,10 +100,10 @@ class ScatterPlot:
                 width=width,
             ),
             "bins_slider": pn.widgets.IntSlider(
-                name="Bins in marginal histograms",
+                name="Histogram bins",
                 start=10,
                 end=100,
-                value=30,
+                value=50,
                 step=1,
                 width=width,
             ),
@@ -113,7 +113,7 @@ class ScatterPlot:
                 width=width,
             ),
             "n_components_x": pn.widgets.IntSlider(
-                name="Number of Gaussian Components",
+                name="Number of components (X)",
                 start=1,
                 end=5,
                 value=2,
@@ -122,7 +122,7 @@ class ScatterPlot:
                 disabled=False,
             ),
             "n_components_y": pn.widgets.IntSlider(
-                name="Number of Gaussian Components",
+                name="Number of components (Y)",
                 start=1,
                 end=5,
                 value=1,
@@ -229,7 +229,7 @@ class ScatterPlot:
         if show_gmm:
             from sklearn.mixture import GaussianMixture
 
-            gmm = GaussianMixture(n_components=n_components)
+            gmm = GaussianMixture(n_components=n_components, random_state=42)
             gmm.fit(clean_data.values.reshape(-1, 1))
             domain = np.linspace(edges[0], edges[-1], 1000)
             density = np.exp(gmm.score_samples(domain.reshape(-1, 1)))
