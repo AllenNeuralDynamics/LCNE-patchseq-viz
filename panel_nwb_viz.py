@@ -180,7 +180,7 @@ class PatchSeqNWBApp(param.Parameterized):
                 normalized_sizes = min_size + (normalized_sizes - p5) / (p95 - p5) * (max_size - min_size)
                 
                 # Replace NaN values with the minimum size
-                normalized_sizes = normalized_sizes.fillna(min_size)
+                normalized_sizes = normalized_sizes.fillna(min_size/2)
                 
                 # Add the size values to the source data
                 source.data['size_values'] = normalized_sizes
@@ -188,7 +188,7 @@ class PatchSeqNWBApp(param.Parameterized):
         
         return 10
 
-    def update_scatter_plot(self, x_col, y_col, color_mapping, size_mapping):
+    def update_scatter_plot(self, x_col, y_col, color_col, size_col):
         # Create a new figure
         p = figure(
             x_axis_label=x_col, y_axis_label=y_col,
@@ -205,10 +205,10 @@ class PatchSeqNWBApp(param.Parameterized):
             source.data[x_col] = pd.to_datetime(pd.Series(source.data[x_col]), errors='coerce')
 
         # Determine color mapping
-        color = self.determine_color_mapping(color_mapping, source, p)
+        color = self.determine_color_mapping(color_col, source, p)
         
         # Determine size mapping
-        size = self.determine_size_mapping(size_mapping, source, p)
+        size = self.determine_size_mapping(size_col, source, p)
 
         # Add scatter glyph using the data source
         p.scatter(
@@ -220,13 +220,24 @@ class PatchSeqNWBApp(param.Parameterized):
             p.y_range.flipped = True
 
         # Add HoverTool with tooltips
-        hovertool = HoverTool(tooltips=[
+        tooltips=[
             ("Date", "@Date"),
             ("jem-id_cell_specimen", "@{jem-id_cell_specimen}"),
             ("Cell ID", "@{ephys_roi_id}"),
             ("LC_targeting", "@LC_targeting"),
             ("injection region", "@{injection region}"),
-        ])
+            ("---", "---"),
+            ("x", f"@{{{x_col}}}"),
+            ("y", f"@{{{y_col}}}"),
+        ]
+        # Add color and size mapping values to tooltips if they are selected
+        if color_col != "None":
+            # Get the actual value from the original dataframe column
+            tooltips.append((f"Color ({color_col})", f"@{{{color_col}}}"))
+        if size_col != "None":
+            tooltips.append((f"Size ({size_col})", f"@{{{size_col}}}"))
+            
+        hovertool = HoverTool(tooltips=tooltips)
         p.add_tools(hovertool)
 
         # Define callback to update ephys_roi_id on point tap
