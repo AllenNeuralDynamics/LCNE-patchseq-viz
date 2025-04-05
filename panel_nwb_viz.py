@@ -130,7 +130,7 @@ class PatchSeqNWBApp(param.Parameterized):
         return "<span style='background:lightgreen;'>Sweep passed QC!</span>"
     
     
-    def determine_color_mapping(self, color_mapping, source, p):
+    def determine_color_mapping(self, color_mapping, p):
         if color_mapping == 'injection region':
             return {'field': color_mapping, 'transform': CategoricalColorMapper(
                 factors=list(REGION_COLOR_MAPPER.keys()),
@@ -161,7 +161,7 @@ class PatchSeqNWBApp(param.Parameterized):
                 return color
         return "black"
     
-    def determine_size_mapping(self, size_mapping, source, p):
+    def determine_size_mapping(self, size_mapping, source, min_size=10, max_size=20, gamma=1):
         if size_mapping == "None":
             return 10
         
@@ -169,18 +169,15 @@ class PatchSeqNWBApp(param.Parameterized):
             numeric_data = pd.Series(pd.to_numeric(self.df_meta[size_mapping], errors='coerce'))
             if not numeric_data.isna().all():
                 # Get the 5th and 95th percentiles of the numeric data
-                p5 = numeric_data.quantile(0.05)
-                p95 = numeric_data.quantile(0.95)
-                
-                # Normalize the data between 5th and 95th percentiles
-                normalized_sizes = numeric_data.clip(p5, p95).copy()
-                
-                # Map the normalized values to sizes between 10 and 20
-                min_size, max_size = 10, 20
-                normalized_sizes = min_size + (normalized_sizes - p5) / (p95 - p5) * (max_size - min_size)
+                p5 = numeric_data.quantile(0.00)
+                p95 = numeric_data.quantile(1.00)
+                                
+                # Map the normalized values to sizes between 10 and 20 with gamma control for nonlinearity
+                normalized_values = ((numeric_data - p5) / (p95 - p5)).clip(0, 1)  # Ensure values are between 0 and 1
+                normalized_sizes = min_size + (normalized_values ** gamma) * (max_size - min_size)
                 
                 # Replace NaN values with the minimum size
-                normalized_sizes = normalized_sizes.fillna(min_size/2)
+                normalized_sizes = normalized_sizes.fillna(5) # Fixed size for NaN values
                 
                 # Add the size values to the source data
                 source.data['size_values'] = normalized_sizes
@@ -188,13 +185,13 @@ class PatchSeqNWBApp(param.Parameterized):
         
         return 10
 
-    def update_scatter_plot(self, x_col, y_col, color_col, size_col):
+    def update_scatter_plot(self, x_col, y_col, color_col, size_col, size_range, size_gamma, alpha):
         # Create a new figure
         p = figure(
             x_axis_label=x_col, y_axis_label=y_col,
             tools="pan,wheel_zoom,box_zoom,reset,tap",  # ensure tap tool is included
             height=500,
-            width=600,
+            width=650,
         )
 
         # Create ColumnDataSource from the dataframe
@@ -205,14 +202,14 @@ class PatchSeqNWBApp(param.Parameterized):
             source.data[x_col] = pd.to_datetime(pd.Series(source.data[x_col]), errors='coerce')
 
         # Determine color mapping
-        color = self.determine_color_mapping(color_col, source, p)
+        color = self.determine_color_mapping(color_col, p)
         
         # Determine size mapping
-        size = self.determine_size_mapping(size_col, source, p)
+        size = self.determine_size_mapping(size_col, source, min_size=size_range[0], max_size=size_range[1], gamma=size_gamma)
 
         # Add scatter glyph using the data source
         p.scatter(
-            x=x_col, y=y_col, source=source, size=size, color=color, alpha=0.7
+            x=x_col, y=y_col, source=source, size=size, color=color, alpha=alpha
         )
 
         # Flip the y-axis if y_col == "y" (depth)
@@ -286,15 +283,30 @@ class PatchSeqNWBApp(param.Parameterized):
             name='Y-Axis', options=sorted(list(self.df_meta.columns)), value="y",
             width=200
         )
-        color_mapping_select = pn.widgets.Select(
+        color_col_select = pn.widgets.Select(
             name='Color Mapping', options=["None"] + sorted(list(self.df_meta.columns)),
             value="injection region",
             width=200
         )
-        size_mapping_select = pn.widgets.Select(
+        size_col_select = pn.widgets.Select(
             name='Size Mapping', options=["None"] + sorted(list(self.df_meta.columns)), 
             value="None",
             width=200
+        )
+        alpha_slider = pn.widgets.FloatSlider(
+            name='Alpha', value=0.7, start=0.0, end=1.0, step=0.01, width=200
+        )
+        # Add range slider for controlling min and max marker sizes
+        size_range_slider = pn.widgets.RangeSlider(
+            name='Size Range (min, max)', 
+            start=5, 
+            end=30, 
+            value=(8, 20), 
+            step=1, 
+            width=200
+        )
+        size_gamma_slider = pn.widgets.FloatSlider(
+            name='Size Gamma', value=1, start=0.0, end=5.0, step=0.01, width=200
         )
 
         # Create a reactive scatter plot that updates when axis selections change
@@ -302,14 +314,24 @@ class PatchSeqNWBApp(param.Parameterized):
             self.update_scatter_plot,
             x_axis_select.param.value,
             y_axis_select.param.value,
-            color_mapping_select.param.value,
-            size_mapping_select.param.value
+            color_col_select.param.value,
+            size_col_select.param.value,
+            size_range_slider.param.value_throttled,
+            size_gamma_slider.param.value_throttled,
+            alpha_slider.param.value_throttled,
         )
         return pn.Row(
             pn.Column(
-                x_axis_select, y_axis_select, color_mapping_select, size_mapping_select,
+                x_axis_select, 
+                y_axis_select, 
+                color_col_select, 
+                size_col_select,
+                pn.layout.Divider(margin=(10, 0, 10, 0)),
+                size_range_slider,
+                size_gamma_slider,
+                alpha_slider,
                 margin=(0, 20, 20, 20)
-            ), 
+            ),
             scatter_plot,
             margin=(0, 20, 20, 20),  # top, right, bottom, left margins in pixels
         )
