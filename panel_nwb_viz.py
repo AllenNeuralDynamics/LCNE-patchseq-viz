@@ -14,11 +14,6 @@ from bokeh.io import curdoc
 from bokeh.layouts import column as bokeh_column
 from bokeh.models import (
     BoxZoomTool,
-    CategoricalColorMapper,
-    ColorBar,
-    ColumnDataSource,
-    HoverTool,
-    LinearColorMapper,
 )
 from bokeh.palettes import (
     Category10,
@@ -34,10 +29,10 @@ from bokeh.palettes import (
 )
 from bokeh.plotting import figure
 
-from LCNE_patchseq_analysis import REGION_COLOR_MAPPER
 from LCNE_patchseq_analysis.data_util.metadata import load_ephys_metadata
 from LCNE_patchseq_analysis.data_util.nwb import PatchSeqNWB
 from LCNE_patchseq_analysis.efel.io import load_efel_features_from_roi
+from LCNE_patchseq_analysis.panel_app.components.scatter_plot import ScatterPlot
 from LCNE_patchseq_analysis.pipeline_util.s3 import (
     get_public_url_cell_summary,
     get_public_url_sweep,
@@ -46,7 +41,7 @@ from LCNE_patchseq_analysis.pipeline_util.s3 import (
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-pn.extension("tabulator")
+# pn.extension("tabulator")
 curdoc().title = "LC-NE Patch-seq Data Explorer"
 
 # Define available color palettes
@@ -74,6 +69,7 @@ class PatchSeqNWBApp(param.Parameterized):
         """
         Holder for currently selected cell ID and sweep number.
         """
+
         ephys_roi_id = param.String(default="")
         sweep_number_selected = param.Integer(default=0)
 
@@ -100,7 +96,8 @@ class PatchSeqNWBApp(param.Parameterized):
             .sort_values(["injection region"])
         )
 
-        self.df_meta["LC_targeting"].fillna("unknown", inplace=True)
+        # Create a copy to avoid SettingWithCopyWarning
+        self.df_meta.loc[:, "LC_targeting"] = self.df_meta["LC_targeting"].fillna("unknown")
 
         self.cell_key = [
             "Date",
@@ -111,6 +108,13 @@ class PatchSeqNWBApp(param.Parameterized):
             "injection region",
             "Y (D --> V)",
         ]
+
+        # Turn Date to datetime
+        self.df_meta.loc[:, "Date_str"] = self.df_meta["Date"]  # Keep the original Date as string
+        self.df_meta.loc[:, "Date"] = pd.to_datetime(self.df_meta["Date"], errors="coerce")
+
+        # Initialize scatter plot component
+        self.scatter_plot = ScatterPlot(self.df_meta, self.data_holder)
 
         # Create the cell selector panel once.
         self.cell_selector_panel = self.create_cell_selector_panel()
@@ -185,276 +189,72 @@ class PatchSeqNWBApp(param.Parameterized):
             )
         return "<span style='background:lightgreen;'>Sweep passed QC!</span>"
 
-    def add_color_bar(self, color_mapper, title, p):
-        """Add a color bar to the plot with consistent styling."""
-        color_bar = ColorBar(
-            color_mapper=color_mapper,
-            label_standoff=12,
-            border_line_color=None,
-            location=(0, 0),
-            title=title,
-            title_text_font_size="12pt",
-            major_label_text_font_size="10pt",
-        )
-        p.add_layout(color_bar, "right")
-        return color_bar
-
-    def determine_color_mapping(self, color_mapping, color_palette, p):
-        """
-        Determine the color mapping for the scatter plot.
-        """
-        if color_mapping == "injection region":
-            color_mapper = {
-                key: value
-                for key, value in REGION_COLOR_MAPPER.items()
-                if key in self.df_meta["injection region"].unique()
-            }
-            color_mapper = CategoricalColorMapper(
-                factors=list(color_mapper.keys()), palette=list(color_mapper.values())
-            )
-
-            # Add a color bar for categorical data
-            self.add_color_bar(color_mapper, color_mapping, p)
-            return {"field": color_mapping, "transform": color_mapper}
-
-        # If categorical (nunique <= 10), use categorical color mapper
-        if self.df_meta[color_mapping].nunique() <= 10:
-            color_mapper = CategoricalColorMapper(
-                factors=list(self.df_meta[color_mapping].unique()),
-                palette=color_palette[self.df_meta[color_mapping].nunique()],
-            )
-            self.add_color_bar(color_mapper, color_mapping, p)
-            return {"field": color_mapping, "transform": color_mapper}
-
-        # Try to convert the column to numeric
-        numeric_data = pd.Series(pd.to_numeric(self.df_meta[color_mapping], errors="coerce"))
-        if not numeric_data.isna().all():
-            # If conversion is successful, use linear color mapper
-            low = numeric_data.min()
-            high = numeric_data.max()
-            color_mapper = LinearColorMapper(palette=color_palette, low=low, high=high)
-            color = {"field": color_mapping, "transform": color_mapper}
-
-            # Add a color bar
-            self.add_color_bar(color_mapper, color_mapping, p)
-            return color
-
-        return "black"
-
-    def determine_size_mapping(self, size_mapping, source, min_size=10, max_size=20, gamma=1):
-        """
-        Determine the size mapping for the scatter plot.
-        """
-        if size_mapping == "None":
-            return 10
-
-        if size_mapping in self.df_meta.columns:
-            numeric_data = pd.Series(pd.to_numeric(self.df_meta[size_mapping], errors="coerce"))
-            if not numeric_data.isna().all():
-                # Get the 5th and 95th percentiles of the numeric data
-                p5 = numeric_data.quantile(0.00)
-                p95 = numeric_data.quantile(1.00)
-
-                # Map the normalized values to sizes between 10 and 20 with
-                # gamma control for nonlinearity
-                normalized_values = ((numeric_data - p5) / (p95 - p5)).clip(
-                    0, 1
-                )  # Ensure values are between 0 and 1
-                normalized_sizes = min_size + (normalized_values**gamma) * (max_size - min_size)
-
-                # Replace NaN values with the minimum size
-                normalized_sizes = normalized_sizes.fillna(5)  # Fixed size for NaN values
-
-                # Add the size values to the source data
-                source.data["size_values"] = normalized_sizes
-                return "size_values"
-
-        return 10
-
-    def update_scatter_plot(
-        self,
-        x_col,
-        y_col,
-        color_col,
-        color_palette,
-        size_col,
-        size_range,
-        size_gamma,
-        alpha,
-        width,
-        height,
-    ):
-        # Create a new figure
-        p = figure(
-            x_axis_label=x_col,
-            y_axis_label=y_col,
-            tools="pan,wheel_zoom,box_zoom,reset,tap",  # ensure tap tool is included
-            height=height,
-            width=width,
-        )
-
-        # Create ColumnDataSource from the dataframe
-        source = ColumnDataSource(self.df_meta)
-
-        # If any column is Date, convert it to datetime
-        if x_col == "Date":
-            source.data[x_col] = pd.to_datetime(pd.Series(source.data[x_col]), errors="coerce")
-
-        # Determine color mapping
-        color = self.determine_color_mapping(color_col, COLOR_PALETTES[color_palette], p)
-
-        # Determine size mapping
-        size = self.determine_size_mapping(
-            size_col, source, min_size=size_range[0], max_size=size_range[1], gamma=size_gamma
-        )
-
-        # Add scatter glyph using the data source
-        p.scatter(x=x_col, y=y_col, source=source, size=size, color=color, alpha=alpha)
-
-        # Flip the y-axis if y_col == "y" (depth)
-        if y_col == "Y (D --> V)":
-            p.y_range.flipped = True
-
-        # Add HoverTool with tooltips
-        tooltips = [
-            ("Date", "@Date"),
-            ("jem-id_cell_specimen", "@{jem-id_cell_specimen}"),
-            ("Cell ID", "@{ephys_roi_id}"),
-            ("LC_targeting", "@LC_targeting"),
-            ("injection region", "@{injection region}"),
-            ("---", "---"),
-            ("x", f"@{{{x_col}}}"),
-            ("y", f"@{{{y_col}}}"),
-        ]
-        # Add color and size mapping values to tooltips if they are selected
-        if color_col != "None":
-            # Get the actual value from the original dataframe column
-            tooltips.append((f"Color ({color_col})", f"@{{{color_col}}}"))
-        if size_col != "None":
-            tooltips.append((f"Size ({size_col})", f"@{{{size_col}}}"))
-
-        hovertool = HoverTool(tooltips=tooltips)
-        p.add_tools(hovertool)
-
-        # Define callback to update ephys_roi_id on point tap
-        def update_ephys_roi_id(attr, old, new):
-            if new:
-                selected_index = new[0]
-                self.data_holder.ephys_roi_id = str(
-                    int(self.df_meta.iloc[selected_index]["ephys_roi_id"])
-                )
-                logger.info(f"Selected ephys_roi_id: {self.data_holder.ephys_roi_id}")
-
-        # Attach the callback to the selection changes
-        if hasattr(source.selected, "on_change"):
-            source.selected.on_change("indices", update_ephys_roi_id)
-        else:
-            # Alternative method to handle selection changes
-            source.selected.on("indices", update_ephys_roi_id)
-
-        # Activate the BoxZoom tool by default
-        box_zoom_tool = p.select_one(BoxZoomTool)
-        if box_zoom_tool:
-            p.toolbar.active_drag = box_zoom_tool
-
-        # Set axis label font sizes
-        p.xaxis.axis_label_text_font_size = "14pt"
-        p.yaxis.axis_label_text_font_size = "14pt"
-
-        # Set major tick label font sizes
-        p.xaxis.major_label_text_font_size = "12pt"
-        p.yaxis.major_label_text_font_size = "12pt"
-
-        return p
-
     def create_scatter_plot(self):
         """
-        Allows the user to select any two columns from self.df_meta and
-        generates a 2D scatter plot using Bokeh.
+        Create the scatter plot panel using the ScatterPlot component.
         """
-        # Create dropdown widgets for selecting columns
-        x_axis_select = pn.widgets.Select(
-            name="X-Axis",
-            options=sorted(list(self.df_meta.columns)),
-            value="first_spike_AP_width @ long_square_rheo, min",
-            width=200,
-        )
-        y_axis_select = pn.widgets.Select(
-            name="Y-Axis",
-            options=sorted(list(self.df_meta.columns)),
-            value="Y (D --> V)",
-            width=200,
-        )
-        color_col_select = pn.widgets.Select(
-            name="Color Mapping",
-            options=["None"] + sorted(list(self.df_meta.columns)),
-            value="injection region",
-            width=200,
-        )
-        size_col_select = pn.widgets.Select(
-            name="Size Mapping",
-            options=["None"] + sorted(list(self.df_meta.columns)),
-            value="None",
-            width=200,
-        )
-        alpha_slider = pn.widgets.FloatSlider(
-            name="Alpha", value=0.7, start=0.0, end=1.0, step=0.01, width=200
-        )
-        # Add range slider for controlling min and max marker sizes
-        size_range_slider = pn.widgets.RangeSlider(
-            name="Size Range (min, max)", start=5, end=30, value=(8, 20), step=1, width=200
-        )
-        size_gamma_slider = pn.widgets.FloatSlider(
-            name="Size Gamma", value=1, start=0.0, end=5.0, step=0.01, width=200
-        )
-        color_palette_select = pn.widgets.Select(
-            name="Color Palette", options=list(COLOR_PALETTES.keys()), value="Viridis256", width=200
+        # Get plot controls from the scatter plot component
+        controls = self.scatter_plot.create_plot_controls(width=180)
+
+        # Add color palette selector
+        controls["color_palette_select"] = pn.widgets.Select(
+            name="Color Palette",
+            options=list(COLOR_PALETTES.keys()),
+            value="Viridis256",
+            width=180,
         )
 
-        # Add plot size controls
-        width_slider = pn.widgets.IntSlider(
-            name="Plot Width", value=650, start=400, end=1200, step=50, width=200
-        )
-        height_slider = pn.widgets.IntSlider(
-            name="Plot Height", value=500, start=300, end=1000, step=50, width=200
-        )
-
-        # Create a reactive scatter plot that updates when axis selections change
+        # Create a reactive scatter plot that updates when controls change
         scatter_plot = pn.bind(
-            self.update_scatter_plot,
-            x_axis_select.param.value,
-            y_axis_select.param.value,
-            color_col_select.param.value,
-            color_palette_select.param.value,
-            size_col_select.param.value,
-            size_range_slider.param.value_throttled,
-            size_gamma_slider.param.value_throttled,
-            alpha_slider.param.value_throttled,
-            width_slider.param.value_throttled,
-            height_slider.param.value_throttled,
+            self.scatter_plot.update_scatter_plot,
+            controls["x_axis_select"].param.value,
+            controls["y_axis_select"].param.value,
+            controls["color_col_select"].param.value,
+            controls["color_palette_select"].param.value,
+            controls["size_col_select"].param.value,
+            controls["size_range_slider"].param.value_throttled,
+            controls["size_gamma_slider"].param.value_throttled,
+            controls["alpha_slider"].param.value_throttled,
+            controls["width_slider"].param.value_throttled,
+            controls["height_slider"].param.value_throttled,
+            controls["bins_slider"].param.value_throttled,
+            controls["hist_height_slider"].param.value_throttled,
+            controls["show_gmm"].param.value,
+            controls["n_components_x"].param.value,
+            controls["n_components_y"].param.value,
         )
+
         return pn.Row(
             pn.Column(
-                x_axis_select,
-                y_axis_select,
-                color_col_select,
-                size_col_select,
-                pn.layout.Divider(margin=(10, 0, 10, 0)),
+                controls["x_axis_select"],
+                controls["y_axis_select"],
+                pn.layout.Divider(margin=(5, 0, 5, 0)),
+                controls["color_col_select"],
+                controls["color_palette_select"],
+                pn.layout.Divider(margin=(5, 0, 5, 0)),
+                controls["size_col_select"],
+                controls["size_range_slider"],
+                controls["size_gamma_slider"],
+                pn.layout.Divider(margin=(5, 0, 5, 0)),
+                controls["bins_slider"],
+                controls["show_gmm"],
+                controls["n_components_x"],
+                controls["n_components_y"],
+                pn.layout.Divider(margin=(5, 0, 5, 0)),
                 pn.Accordion(
                     (
-                        "Appearance Settings",
+                        "Plot settings",
                         pn.Column(
-                            color_palette_select,
-                            size_range_slider,
-                            size_gamma_slider,
-                            alpha_slider,
-                            width_slider,
-                            height_slider,
+                            controls["alpha_slider"],
+                            controls["width_slider"],
+                            controls["height_slider"],
+                            controls["hist_height_slider"],
                         ),
                     ),
-                    active=[1],  # Open by default
+                    active=[1],
                 ),
-                margin=(0, 20, 20, 20),
+                margin=(0, 20, 20, 0),  # top, right, bottom, left margins in pixels
+                width=200,
             ),
             scatter_plot,
             margin=(0, 20, 20, 20),  # top, right, bottom, left margins in pixels
@@ -517,10 +317,19 @@ class PatchSeqNWBApp(param.Parameterized):
             if s3_url:
                 return pn.pane.PNG(s3_url, sizing_mode="stretch_width")
             else:
-                return pn.pane.Markdown("No S3 cell summary plot available")
+                return pn.pane.Markdown(
+                    "### Select the table or the scatter plot to view the cell summary plot."
+                )
 
-        s3_cell_summary_plot = pn.bind(
-            get_s3_cell_summary_plot, ephys_roi_id=self.data_holder.param.ephys_roi_id
+        s3_cell_summary_plot = pn.Column(
+            pn.bind(
+                lambda ephys_roi_id: pn.pane.Markdown(
+                    "## Cell summary plot" + (f" for {ephys_roi_id}" if ephys_roi_id else "")
+                ),
+                ephys_roi_id=self.data_holder.param.ephys_roi_id,
+            ),
+            pn.bind(get_s3_cell_summary_plot, ephys_roi_id=self.data_holder.param.ephys_roi_id),
+            sizing_mode="stretch_width",
         )
 
         cell_selector_panel = pn.Column(
@@ -547,7 +356,6 @@ class PatchSeqNWBApp(param.Parameterized):
         raw_this_cell = PatchSeqNWB(ephys_roi_id=ephys_roi_id, if_load_metadata=False)
 
         # Now let's get df sweep from the eFEL enriched one
-        # df_sweeps_valid = raw_this_cell.df_sweeps.query("passed == passed")
         df_sweeps = load_efel_features_from_roi(ephys_roi_id, if_from_s3=True)["df_sweeps"]
         df_sweeps_valid = df_sweeps.query("passed == passed")
 
