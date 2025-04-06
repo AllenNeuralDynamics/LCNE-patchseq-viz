@@ -1,7 +1,8 @@
 """
 Size mapping utilities for the scatter plot.
 """
-from typing import Any, Tuple, Union
+
+from typing import Union
 
 import pandas as pd
 from bokeh.models import ColumnDataSource
@@ -24,14 +25,14 @@ class SizeMapping:
     ) -> Union[int, str]:
         """
         Determine the size mapping for the scatter plot.
-        
+
         Args:
             size_mapping: Column name to use for size mapping
             source: ColumnDataSource to add size values to
             min_size: Minimum marker size
             max_size: Maximum marker size
             gamma: Gamma value for nonlinear size scaling
-            
+
         Returns:
             Either a fixed size or the name of the size column in the source
         """
@@ -57,4 +58,4 @@ class SizeMapping:
                 source.data["size_values"] = normalized_sizes
                 return "size_values"
 
-        return 10 
+        return 10

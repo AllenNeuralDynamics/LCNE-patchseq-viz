@@ -14,11 +14,6 @@ from bokeh.io import curdoc
 from bokeh.layouts import column as bokeh_column
 from bokeh.models import (
     BoxZoomTool,
-    CategoricalColorMapper,
-    ColorBar,
-    ColumnDataSource,
-    HoverTool,
-    LinearColorMapper,
 )
 from bokeh.palettes import (
     Category10,
@@ -34,15 +29,14 @@ from bokeh.palettes import (
 )
 from bokeh.plotting import figure
 
-from LCNE_patchseq_analysis import REGION_COLOR_MAPPER
 from LCNE_patchseq_analysis.data_util.metadata import load_ephys_metadata
 from LCNE_patchseq_analysis.data_util.nwb import PatchSeqNWB
 from LCNE_patchseq_analysis.efel.io import load_efel_features_from_roi
+from LCNE_patchseq_analysis.panel_app.components.scatter_plot import ScatterPlot
 from LCNE_patchseq_analysis.pipeline_util.s3 import (
     get_public_url_cell_summary,
     get_public_url_sweep,
 )
-from LCNE_patchseq_analysis.panel_app.components.scatter_plot import ScatterPlot
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -75,6 +69,7 @@ class PatchSeqNWBApp(param.Parameterized):
         """
         Holder for currently selected cell ID and sweep number.
         """
+
         ephys_roi_id = param.String(default="")
         sweep_number_selected = param.Integer(default=0)
 
@@ -113,7 +108,7 @@ class PatchSeqNWBApp(param.Parameterized):
             "injection region",
             "Y (D --> V)",
         ]
-        
+
         # Turn Date to datetime
         self.df_meta.loc[:, "Date_str"] = self.df_meta["Date"]  # Keep the original Date as string
         self.df_meta.loc[:, "Date"] = pd.to_datetime(self.df_meta["Date"], errors="coerce")
@@ -194,14 +189,13 @@ class PatchSeqNWBApp(param.Parameterized):
             )
         return "<span style='background:lightgreen;'>Sweep passed QC!</span>"
 
-
     def create_scatter_plot(self):
         """
         Create the scatter plot panel using the ScatterPlot component.
         """
         # Get plot controls from the scatter plot component
         controls = self.scatter_plot.create_plot_controls(width=180)
-        
+
         # Add color palette selector
         controls["color_palette_select"] = pn.widgets.Select(
             name="Color Palette",
@@ -248,13 +242,15 @@ class PatchSeqNWBApp(param.Parameterized):
                 controls["n_components_y"],
                 pn.layout.Divider(margin=(5, 0, 5, 0)),
                 pn.Accordion(
-                    ("Plot settings",
-                     pn.Column(
-                         controls["alpha_slider"],
-                         controls["width_slider"],
-                         controls["height_slider"],
-                         controls["hist_height_slider"],
-                     )),
+                    (
+                        "Plot settings",
+                        pn.Column(
+                            controls["alpha_slider"],
+                            controls["width_slider"],
+                            controls["height_slider"],
+                            controls["hist_height_slider"],
+                        ),
+                    ),
                     active=[1],
                 ),
                 margin=(0, 20, 20, 0),  # top, right, bottom, left margins in pixels
@@ -322,20 +318,17 @@ class PatchSeqNWBApp(param.Parameterized):
                 return pn.pane.PNG(s3_url, sizing_mode="stretch_width")
             else:
                 return pn.pane.Markdown(
-                    "### Select the table or the scatter plot to view the cell summary plot.")
+                    "### Select the table or the scatter plot to view the cell summary plot."
+                )
 
         s3_cell_summary_plot = pn.Column(
             pn.bind(
                 lambda ephys_roi_id: pn.pane.Markdown(
-                    f"## Cell summary plot" + 
-                    (f" for {ephys_roi_id}" 
-                    if ephys_roi_id else "")
+                    "## Cell summary plot" + (f" for {ephys_roi_id}" if ephys_roi_id else "")
                 ),
-                ephys_roi_id=self.data_holder.param.ephys_roi_id
+                ephys_roi_id=self.data_holder.param.ephys_roi_id,
             ),
-            pn.bind(
-                get_s3_cell_summary_plot, ephys_roi_id=self.data_holder.param.ephys_roi_id
-            ),
+            pn.bind(get_s3_cell_summary_plot, ephys_roi_id=self.data_holder.param.ephys_roi_id),
             sizing_mode="stretch_width",
         )
 
@@ -537,6 +530,7 @@ class PatchSeqNWBApp(param.Parameterized):
             margin=(20, 20, 0, 20),  # top, right, bottom, left margins in pixels
         )
         return layout
+
 
 app = PatchSeqNWBApp()
 layout = app.main_layout()

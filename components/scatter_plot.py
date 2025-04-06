@@ -1,15 +1,16 @@
 """
 Scatter plot component for the visualization app.
 """
-import logging
-from typing import List, Tuple, Any, Dict
 
+import logging
+from typing import Any, Dict, List, Tuple
+
+import numpy as np
 import pandas as pd
 import panel as pn
-from bokeh.models import HoverTool, ColumnDataSource, BoxZoomTool, DatetimeTickFormatter
-from bokeh.plotting import figure
 from bokeh.layouts import gridplot
-import numpy as np
+from bokeh.models import BoxZoomTool, ColumnDataSource, DatetimeTickFormatter, HoverTool
+from bokeh.plotting import figure
 
 from LCNE_patchseq_analysis.panel_app.components.color_mapping import ColorMapping
 from LCNE_patchseq_analysis.panel_app.components.size_mapping import SizeMapping
@@ -33,17 +34,17 @@ class ScatterPlot:
     def _add_cell_summary_urls(self):
         """Add cell summary URLs to the dataframe."""
         # Create a new column for cell summary URLs
-        self.df_meta['cell_summary_url'] = None
-        
+        self.df_meta["cell_summary_url"] = None
+
         # Get URLs for each ephys_roi_id
         for idx, row in self.df_meta.iterrows():
-            ephys_roi_id = str(int(row['ephys_roi_id']))
+            ephys_roi_id = str(int(row["ephys_roi_id"]))
             try:
                 url = get_public_url_cell_summary(ephys_roi_id, if_check_exists=False)
-                self.df_meta.at[idx, 'cell_summary_url'] = url
+                self.df_meta.at[idx, "cell_summary_url"] = url
             except Exception as e:
                 logger.warning(f"Could not get URL for ephys_roi_id {ephys_roi_id}: {e}")
-                self.df_meta.at[idx, 'cell_summary_url'] = None
+                self.df_meta.at[idx, "cell_summary_url"] = None
 
     def create_plot_controls(self, width: int = 180) -> Dict[str, Any]:
         """Create the control widgets for the scatter plot."""
@@ -156,29 +157,29 @@ class ScatterPlot:
                 step=10,
             ),
         }
-        
+
         # Link the GMM checkbox to enable/disable the component sliders
         def toggle_gmm_components(event):
             controls["n_components_x"].disabled = not event.new
             controls["n_components_y"].disabled = not event.new
-            
+
         controls["show_gmm"].param.watch(toggle_gmm_components, "value")
-        
+
         # Initialize the disabled state based on the initial checkbox value
         controls["n_components_x"].disabled = not controls["show_gmm"].value
         controls["n_components_y"].disabled = not controls["show_gmm"].value
-        
+
         return controls
 
     def create_tooltips(
         self, x_col: str, y_col: str, color_col: str, size_col: str
     ) -> List[Tuple[str, str]]:
         """Create tooltips for the hover tool."""
-        
+
         tooltips = f"""
              <div style="text-align: left; flex: auto; white-space: nowrap; margin: 0 10px">
                     <span style="font-size: 17px;">
-                        <b>@Date_str, @{{injection region}}, @{{jem-id_cell_specimen}}, #@{{ephys_roi_id}}</b><br>
+                        <b>@Date_str, @{{injection region}}, @{{jem-id_cell_specimen}}, #@{{ephys_roi_id}}</b><br>  # noqa: E501
                         <b>X = @{{{x_col}}}</b> [{x_col}]<br>
                         <b>Y = @{{{y_col}}}</b> [{y_col}]<br>
                         <b> Color = @{{{color_col}}}</b> [{color_col}]<br>
@@ -189,16 +190,23 @@ class ScatterPlot:
                  <img src="@cell_summary_url{{safe}}" alt="Cell Summary" style="width: 800px; height: auto;">
              </div>
              """
-            
+
         return tooltips
 
     def create_marginal_histogram(
-        self, data: pd.Series, orientation: str, width: int, height: int, alpha: float, bins: int,
-        show_gmm: bool = False, n_components: int = 1
+        self,
+        data: pd.Series,
+        orientation: str,
+        width: int,
+        height: int,
+        alpha: float,
+        bins: int,
+        show_gmm: bool = False,
+        n_components: int = 1,
     ) -> figure:
         """Create a histogram for marginal distribution with optional GMM overlay."""
         # Remove NaN values and convert to numeric
-        clean_data = pd.to_numeric(data, errors='coerce').dropna()
+        clean_data = pd.to_numeric(data, errors="coerce").dropna()
 
         # If no valid data, create an empty plot
         if clean_data.empty:
@@ -243,20 +251,24 @@ class ScatterPlot:
         # Plot the histogram using vbar/hbar (Bokeh's bar plot) instead of quad
         if orientation == "x":
             # Use vbar for x-orientation
-            p.vbar(x=[(edges[i] + edges[i+1])/2 for i in range(len(edges)-1)],
-                   top=hist,
-                   width=(edges[1]-edges[0]) * 0.9,  # Slightly narrower than bin width
-                   fill_color="gray",
-                   line_color="white",
-                   alpha=0.9)
+            p.vbar(
+                x=[(edges[i] + edges[i + 1]) / 2 for i in range(len(edges) - 1)],
+                top=hist,
+                width=(edges[1] - edges[0]) * 0.9,  # Slightly narrower than bin width
+                fill_color="gray",
+                line_color="white",
+                alpha=0.9,
+            )
         else:  # "y" orientation
             # Use hbar for y-orientation
-            p.hbar(y=[(edges[i] + edges[i+1])/2 for i in range(len(edges)-1)],
-                   right=hist,
-                   height=(edges[1]-edges[0]) * 0.9,  # Slightly narrower than bin width
-                   fill_color="gray",
-                   line_color="white",
-                   alpha=0.9)
+            p.hbar(
+                y=[(edges[i] + edges[i + 1]) / 2 for i in range(len(edges) - 1)],
+                right=hist,
+                height=(edges[1] - edges[0]) * 0.9,  # Slightly narrower than bin width
+                fill_color="gray",
+                line_color="white",
+                alpha=0.9,
+            )
 
         # Optional: Plot Gaussian Mixture Model overlay
         if show_gmm:
@@ -267,18 +279,30 @@ class ScatterPlot:
             domain = np.linspace(edges[0], edges[-1], 1000)
             density = np.exp(gmm.score_samples(domain.reshape(-1, 1)))
 
-            p.line(*((domain, density) if orientation == "x" else (density, domain)),
-                   line_color="black", line_width=4, alpha=0.9)
+            p.line(
+                *((domain, density) if orientation == "x" else (density, domain)),
+                line_color="black",
+                line_width=4,
+                alpha=0.9,
+            )
 
             # Plot individual GMM components
             for i in range(n_components):
                 mean = gmm.means_[i][0]
                 std = np.sqrt(gmm.covariances_[i][0][0])
                 weight = gmm.weights_[i]
-                comp_density = weight * \
-                    np.exp(-0.5 * ((domain - mean) / std) ** 2) / (std * np.sqrt(2 * np.pi))
-                p.line(*((domain, comp_density) if orientation == "x" else (comp_density, domain)),
-                       line_color="black", line_width=2, alpha=0.9, line_dash="dashed")
+                comp_density = (
+                    weight
+                    * np.exp(-0.5 * ((domain - mean) / std) ** 2)
+                    / (std * np.sqrt(2 * np.pi))
+                )
+                p.line(
+                    *((domain, comp_density) if orientation == "x" else (comp_density, domain)),
+                    line_color="black",
+                    line_width=2,
+                    alpha=0.9,
+                    line_dash="dashed",
+                )
 
         # Hide axes and grid
         p.xaxis.visible = False
@@ -286,8 +310,7 @@ class ScatterPlot:
         p.grid.visible = False
         return p
 
-
-    def update_scatter_plot(
+    def update_scatter_plot(  # noqa: C901
         self,
         x_col: str,
         y_col: str,
@@ -317,20 +340,19 @@ class ScatterPlot:
 
         # Create ColumnDataSource from the dataframe
         source = ColumnDataSource(self.df_meta)
-        
+
         # If any column is Date, convert it to datetime
         if x_col == "Date":
-            source.data[x_col] = pd.to_datetime(
-                pd.Series(source.data[x_col]), errors="coerce")
+            source.data[x_col] = pd.to_datetime(pd.Series(source.data[x_col]), errors="coerce")
             p.xaxis.formatter = DatetimeTickFormatter(
                 years="%Y",
                 months="%Y-%m",
                 days="%Y-%m-%d",
             )
-            
+
         # Determine color mapping
         color = self.color_mapping.determine_color_mapping(color_col, color_palette, p)
-        
+
         # Determine size mapping
         size = self.size_mapping.determine_size_mapping(
             size_col, source, min_size=size_range[0], max_size=size_range[1], gamma=size_gamma
@@ -348,13 +370,10 @@ class ScatterPlot:
         hovertool = HoverTool(
             tooltips=tooltips,
             attachment="right",  # Fix tooltip to the right of the plot
-            formatters={
-                '@Date': "datetime"
-            }
+            formatters={"@Date": "datetime"},
         )
 
         p.add_tools(hovertool)
-                
 
         # Define callback to update ephys_roi_id on point tap
         def update_ephys_roi_id(attr, old, new):
@@ -368,7 +387,7 @@ class ScatterPlot:
 
         # Attach the callback to the selection changes
         source.selected.on_change("indices", update_ephys_roi_id)
-        
+
         # Set the default tool activated on drag to be box zoom
         p.toolbar.active_drag = p.select_one(BoxZoomTool)
 
@@ -385,8 +404,14 @@ class ScatterPlot:
         try:
             if x_col != "Date" and x_col != "None":  # Skip histogram for Date column
                 x_hist = self.create_marginal_histogram(
-                    self.df_meta[x_col], "x", width=width, height=hist_height_slider, alpha=alpha, bins=bins,
-                    show_gmm=show_gmm, n_components=n_components_x
+                    self.df_meta[x_col],
+                    "x",
+                    width=width,
+                    height=hist_height_slider,
+                    alpha=alpha,
+                    bins=bins,
+                    show_gmm=show_gmm,
+                    n_components=n_components_x,
                 )
                 x_hist.x_range = p.x_range  # Link x ranges
         except Exception as e:
@@ -397,8 +422,14 @@ class ScatterPlot:
         try:
             if y_col != "Date" and y_col != "None":  # Skip histogram for Date column
                 y_hist = self.create_marginal_histogram(
-                    self.df_meta[y_col], "y", width=hist_height_slider, height=height, alpha=alpha, bins=bins,
-                    show_gmm=show_gmm, n_components=n_components_y
+                    self.df_meta[y_col],
+                    "y",
+                    width=hist_height_slider,
+                    height=height,
+                    alpha=alpha,
+                    bins=bins,
+                    show_gmm=show_gmm,
+                    n_components=n_components_y,
                 )
                 y_hist.y_range = p.y_range  # Link y ranges
         except Exception as e:
@@ -413,4 +444,4 @@ class ScatterPlot:
             toolbar_options=dict(logo=None),
         )
 
-        return layout 
+        return layout
