@@ -56,22 +56,14 @@ class PatchSeqNWBApp(param.Parameterized):
 
         # Load and prepare metadata.
         self.df_meta = load_ephys_metadata(if_with_efel=True)
-        self.df_meta = (
-            self.df_meta.rename(
-                columns={col: col.replace("_tab_master", "") for col in self.df_meta.columns},
-            )
-            .rename(
-                columns={
-                    "x": "X (A --> P)",
-                    "y": "Y (D --> V)",
-                    "z": "Z (L --> R)",
-                }
-            )
-            .sort_values(["injection region"])
+        self.df_meta.rename(
+            columns={
+                "x": "X (A --> P)",
+                "y": "Y (D --> V)",
+                "z": "Z (L --> R)",
+            },
+            inplace=True,
         )
-
-        # Create a copy to avoid SettingWithCopyWarning
-        self.df_meta.loc[:, "LC_targeting"] = self.df_meta["LC_targeting"].fillna("unknown")
 
         self.cell_key = [
             "Date",
@@ -185,6 +177,7 @@ class PatchSeqNWBApp(param.Parameterized):
             controls["alpha_slider"].param.value_throttled,
             controls["width_slider"].param.value_throttled,
             controls["height_slider"].param.value_throttled,
+            controls["font_size_slider"].param.value_throttled,
             controls["bins_slider"].param.value_throttled,
             controls["hist_height_slider"].param.value_throttled,
             controls["show_gmm"].param.value,
@@ -217,6 +210,8 @@ class PatchSeqNWBApp(param.Parameterized):
                             controls["width_slider"],
                             controls["height_slider"],
                             controls["hist_height_slider"],
+                            controls["font_size_slider"],
+                            width=control_width - 30,
                         ),
                     ),
                     active=[1],
@@ -242,9 +237,9 @@ class PatchSeqNWBApp(param.Parameterized):
             options=selectable_cols,
             value=[
                 "width_rheo",
-                "first_spike_AP_width @ long_square_rheo, aver",
+                "efel_AP_width @ long_square_rheo, aver",
                 "sag",
-                "sag_ratio1 @ subthreshold, aver",
+                "efel_sag_ratio1 @ subthreshold, aver",
             ],  # start with no additional columns
             height=300,
             width=500,

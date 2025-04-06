@@ -15,12 +15,16 @@ from LCNE_patchseq_analysis import REGION_COLOR_MAPPER
 class ColorMapping:
     """Handles color mapping for scatter plots."""
 
-    def __init__(self, df_meta: pd.DataFrame):
+    def __init__(self, df_meta: pd.DataFrame, font_size: int = 14):
         """Initialize with metadata dataframe."""
         self.df_meta = df_meta
+        self.font_size = font_size
 
     def add_color_bar(
-        self, color_mapper: Union[CategoricalColorMapper, LinearColorMapper], title: str, p: figure
+        self, color_mapper: Union[CategoricalColorMapper, LinearColorMapper],
+        title: str,
+        p: figure,
+        font_size: int = 14,
     ) -> ColorBar:
         """Add a color bar to the plot with consistent styling."""
         color_bar = ColorBar(
@@ -29,14 +33,14 @@ class ColorMapping:
             border_line_color=None,
             location=(0, 0),
             title=title,
-            title_text_font_size="12pt",
-            major_label_text_font_size="10pt",
+            title_text_font_size=f"{font_size*0.8}pt",
+            major_label_text_font_size=f"{font_size*0.8}pt",
         )
         p.add_layout(color_bar, "right")
         return color_bar
 
     def determine_color_mapping(
-        self, color_mapping: str, color_palette: Any, p: figure
+        self, color_mapping: str, color_palette: Any, p: figure, font_size: int = 14
     ) -> Dict[str, Any]:
         """
         Determine the color mapping for the scatter plot.
@@ -60,7 +64,7 @@ class ColorMapping:
             )
 
             # Add a color bar for categorical data
-            self.add_color_bar(color_mapper, color_mapping, p)
+            self.add_color_bar(color_mapper, color_mapping, p, font_size)
 
             return {"field": color_mapping, "transform": color_mapper}
 
