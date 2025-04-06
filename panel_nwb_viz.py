@@ -15,18 +15,6 @@ from bokeh.layouts import column as bokeh_column
 from bokeh.models import (
     BoxZoomTool,
 )
-from bokeh.palettes import (
-    Category10,
-    Category20,
-    Category20b,
-    Category20c,
-    Cividis256,
-    Inferno256,
-    Magma256,
-    Plasma256,
-    Turbo256,
-    Viridis256,
-)
 from bokeh.plotting import figure
 
 from LCNE_patchseq_analysis.data_util.metadata import load_ephys_metadata
@@ -45,18 +33,18 @@ logger = logging.getLogger(__name__)
 curdoc().title = "LC-NE Patch-seq Data Explorer"
 
 # Define available color palettes
-COLOR_PALETTES = {
-    "Viridis256": Viridis256,
-    "Plasma256": Plasma256,
-    "Magma256": Magma256,
-    "Inferno256": Inferno256,
-    "Cividis256": Cividis256,
-    "Turbo256": Turbo256,
-    "Category10": Category10,
-    "Category20": Category20,
-    "Category20b": Category20b,
-    "Category20c": Category20c,
-}
+COLOR_PALETTES = [
+    "Viridis256",
+    "Plasma256",
+    "Magma256",
+    "Inferno256",
+    "Cividis256",
+    "Turbo256",
+    "Category10",
+    "Category20",
+    "Category20b",
+    "Category20c",
+]
 
 
 class PatchSeqNWBApp(param.Parameterized):
@@ -199,7 +187,7 @@ class PatchSeqNWBApp(param.Parameterized):
         # Add color palette selector
         controls["color_palette_select"] = pn.widgets.Select(
             name="Color Palette",
-            options=list(COLOR_PALETTES.keys()),
+            options=COLOR_PALETTES,
             value="Viridis256",
             width=180,
         )

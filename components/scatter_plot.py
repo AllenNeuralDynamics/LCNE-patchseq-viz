@@ -177,17 +177,18 @@ class ScatterPlot:
         """Create tooltips for the hover tool."""
 
         tooltips = f"""
-             <div style="text-align: left; flex: auto; white-space: nowrap; margin: 0 10px">
+             <div style="text-align: left; flex: auto; white-space: nowrap; margin: 0 10px; 
+                       border: 2px solid black; padding: 10px;">
                     <span style="font-size: 17px;">
-                        <b>@Date_str, @{{injection region}}, @{{jem-id_cell_specimen}}, #@{{ephys_roi_id}}</b><br>  # noqa: E501
+                        <b>@Date_str, @{{injection region}}, @{{ephys_roi_id}}, 
+                            @{{jem-id_cell_specimen}}</b><br>
                         <b>X = @{{{x_col}}}</b> [{x_col}]<br>
                         <b>Y = @{{{y_col}}}</b> [{y_col}]<br>
                         <b> Color = @{{{color_col}}}</b> [{color_col}]<br>
                         <b> Size = @{{{size_col}}}</b> [{size_col}]<br>
                     </span>
-             </div>
-             <div>
-                 <img src="@cell_summary_url{{safe}}" alt="Cell Summary" style="width: 800px; height: auto;">
+                 <img src="@cell_summary_url{{safe}}" alt="Cell Summary" 
+                        style="width: 800px; height: auto;">
              </div>
              """
 
@@ -398,7 +399,7 @@ class ScatterPlot:
         # Set major tick label font sizes
         p.xaxis.major_label_text_font_size = "12pt"
         p.yaxis.major_label_text_font_size = "12pt"
-
+        
         # Create marginal histograms
         x_hist = None
         try:
@@ -436,12 +437,20 @@ class ScatterPlot:
             logger.warning(f"Could not create y histogram: {e}")
             y_hist = None
 
-        # Create grid layout
-        layout = gridplot(
-            [[y_hist, p], [None, x_hist]],
-            toolbar_location="right",
-            merge_tools=True,
-            toolbar_options=dict(logo=None),
-        )
 
+        # Count non-NaN values grouped by "injection region"
+        count_non_nan = self.df_meta.groupby("injection region")[[x_col, y_col]].count().T
+        count_non_nan.insert(0, "Total", count_non_nan.sum(axis=1))
+        count_non_nan.index = pd.Index(["X", "Y"], name="Valid N")
+
+        # Create grid layout
+        layout = pn.Column(
+            gridplot(
+                [[y_hist, p], [None, x_hist]],
+                toolbar_location="right",
+                merge_tools=True,
+                toolbar_options=dict(logo=None),
+            ),
+            pn.pane.Markdown(count_non_nan.to_markdown()),
+        )
         return layout

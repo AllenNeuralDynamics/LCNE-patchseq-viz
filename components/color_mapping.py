@@ -7,6 +7,7 @@ from typing import Any, Dict, Union
 import pandas as pd
 from bokeh.models import CategoricalColorMapper, ColorBar, LinearColorMapper
 from bokeh.plotting import figure
+from bokeh.palettes import all_palettes
 
 from LCNE_patchseq_analysis import REGION_COLOR_MAPPER
 
@@ -67,7 +68,7 @@ class ColorMapping:
         if self.df_meta[color_mapping].nunique() <= 10:
             color_mapper = CategoricalColorMapper(
                 factors=list(self.df_meta[color_mapping].unique()),
-                palette=color_palette[self.df_meta[color_mapping].nunique()],
+                palette=all_palettes[color_palette][self.df_meta[color_mapping].nunique()],
             )
             self.add_color_bar(color_mapper, color_mapping, p)
             return {"field": color_mapping, "transform": color_mapper}
@@ -76,8 +77,8 @@ class ColorMapping:
         numeric_data = pd.Series(pd.to_numeric(self.df_meta[color_mapping], errors="coerce"))
         if not numeric_data.isna().all():
             # If conversion is successful, use linear color mapper
-            low = numeric_data.min()
-            high = numeric_data.max()
+            low = numeric_data.quantile(0.01)
+            high = numeric_data.quantile(0.99)
             color_mapper = LinearColorMapper(palette=color_palette, low=low, high=high)
             color = {"field": color_mapping, "transform": color_mapper}
 
