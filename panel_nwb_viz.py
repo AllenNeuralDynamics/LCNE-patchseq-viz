@@ -32,20 +32,6 @@ logger = logging.getLogger(__name__)
 # pn.extension("tabulator")
 curdoc().title = "LC-NE Patch-seq Data Explorer"
 
-# Define available color palettes
-COLOR_PALETTES = [
-    "Viridis256",
-    "Plasma256",
-    "Magma256",
-    "Inferno256",
-    "Cividis256",
-    "Turbo256",
-    "Category10",
-    "Category20",
-    "Category20b",
-    "Category20c",
-]
-
 
 class PatchSeqNWBApp(param.Parameterized):
     """
@@ -181,16 +167,10 @@ class PatchSeqNWBApp(param.Parameterized):
         """
         Create the scatter plot panel using the ScatterPlot component.
         """
+        control_width = 300
+        
         # Get plot controls from the scatter plot component
-        controls = self.scatter_plot.create_plot_controls(width=180)
-
-        # Add color palette selector
-        controls["color_palette_select"] = pn.widgets.Select(
-            name="Color Palette",
-            options=COLOR_PALETTES,
-            value="Viridis256",
-            width=180,
-        )
+        controls = self.scatter_plot.create_plot_controls(width=control_width)
 
         # Create a reactive scatter plot that updates when controls change
         scatter_plot = pn.bind(
@@ -241,11 +221,12 @@ class PatchSeqNWBApp(param.Parameterized):
                     ),
                     active=[1],
                 ),
-                margin=(0, 20, 20, 0),  # top, right, bottom, left margins in pixels
-                width=200,
+                margin=(0, 50, 20, 0),  # top, right, bottom, left margins in pixels
+                width=control_width,
             ),
             scatter_plot,
             margin=(0, 20, 20, 20),  # top, right, bottom, left margins in pixels
+            # width=800,
         )
 
     def create_cell_selector_panel(self):
@@ -257,7 +238,7 @@ class PatchSeqNWBApp(param.Parameterized):
         cols.sort()
         selectable_cols = [col for col in cols if col not in self.cell_key]
         col_selector = pn.widgets.MultiSelect(
-            name="Add Columns to show",
+            name="Add more columns to show in the table",
             options=selectable_cols,
             value=[
                 "width_rheo",
@@ -266,7 +247,7 @@ class PatchSeqNWBApp(param.Parameterized):
                 "sag_ratio1 @ subthreshold, aver",
             ],  # start with no additional columns
             height=300,
-            width=430,
+            width=500,
         )
 
         def add_df_meta_col(selected_columns):
@@ -509,7 +490,6 @@ class PatchSeqNWBApp(param.Parameterized):
             pn.pane.Markdown("# Patch-seq Ephys Data Explorer\n"),
             pn.Column(
                 pn.pane.Markdown(f"## Cell selector (N = {len(self.df_meta)})"),
-                width=400,
             ),
             pane_cell_selector,
             pn.layout.Divider(),

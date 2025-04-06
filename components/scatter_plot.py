@@ -18,6 +18,19 @@ from LCNE_patchseq_analysis.pipeline_util.s3 import get_public_url_cell_summary
 
 logger = logging.getLogger(__name__)
 
+# Define available color palettes
+COLOR_PALETTES = [
+    "Viridis256",
+    "Plasma256",
+    "Magma256",
+    "Inferno256",
+    "Cividis256",
+    "Turbo256",
+    "Category10",
+    "Category20",
+    "Category20b",
+    "Category20c",
+]
 
 class ScatterPlot:
     """Handles scatter plot creation and updates."""
@@ -70,6 +83,12 @@ class ScatterPlot:
                 name="Color By",
                 options=all_cols,
                 value="injection region",
+                width=width,
+            ),
+            "color_palette_select": pn.widgets.Select(
+                name="Color Palette",
+                options=COLOR_PALETTES,
+                value="Viridis256",
                 width=width,
             ),
             "size_col_select": pn.widgets.Select(
