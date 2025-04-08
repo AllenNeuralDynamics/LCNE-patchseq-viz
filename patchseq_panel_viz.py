@@ -467,42 +467,37 @@ class PatchSeqNWBApp(param.Parameterized):
         # Create spike analysis controls and plots
         spike_controls = self.raw_spike_analysis.create_plot_controls()
 
-        def update_spike_plots(extract_from, n_clusters, n_pca_components, alpha, width, height):
-            try:
-                # Extract representative spikes
-                t, v, dvdt, t_dvdt = self.raw_spike_analysis.extract_representative_spikes(
-                    extract_from=extract_from,
-                    if_normalize_v=True,
-                    normalize_window_v=(-2, 4),
-                    if_normalize_dvdt=True,
-                    normalize_window_dvdt=(-2, 0),
-                    if_smooth_dvdt=False,
-                )
-                
-                # Create spike analysis plots
-                return self.raw_spike_analysis.create_spike_analysis_plots(
-                    t=t,
-                    v=v,
-                    dvdt=dvdt,
-                    t_dvdt=t_dvdt,
-                    n_clusters=n_clusters,
-                    n_pca_components=n_pca_components,
-                    alpha=alpha,
-                    width=width,
-                    height=height,
-                )
-            except Exception as e:
-                return pn.pane.Markdown(f"Error: {str(e)}")
+        def update_spike_plots(extract_from, n_clusters,  alpha, width, height):
+            # Extract representative spikes
+            t, v, dvdt, t_dvdt = self.raw_spike_analysis.extract_representative_spikes(
+                extract_from=extract_from,
+                if_normalize_v=True,
+                normalize_window_v=(-2, 4),
+                if_normalize_dvdt=True,
+                normalize_window_dvdt=(-2, 0),
+                if_smooth_dvdt=False,
+            )
+            
+            # Create spike analysis plots
+            return self.raw_spike_analysis.create_spike_analysis_plots(
+                t=t,
+                v=v,
+                dvdt=dvdt,
+                t_dvdt=t_dvdt,
+                n_clusters=n_clusters,
+                alpha=alpha,
+                width=width,
+                height=height,
+            )
         
         # Create spike analysis plots
         spike_plots = pn.bind(
             update_spike_plots,
             extract_from=spike_controls["extract_from"].param.value,
-            n_clusters=spike_controls["n_clusters"].param.value,
-            n_pca_components=spike_controls["n_pca_components"].param.value,
-            alpha=spike_controls["alpha_slider"].param.value,
-            width=spike_controls["plot_width"].param.value,
-            height=spike_controls["plot_height"].param.value,
+            n_clusters=spike_controls["n_clusters"].param.value_throttled,
+            alpha=spike_controls["alpha_slider"].param.value_throttled,
+            width=spike_controls["plot_width"].param.value_throttled,
+            height=spike_controls["plot_height"].param.value_throttled,
         )
 
         # Bind the sweep panel to the current cell selection.
