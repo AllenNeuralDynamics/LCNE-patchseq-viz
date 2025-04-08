@@ -21,6 +21,7 @@ from LCNE_patchseq_analysis.data_util.metadata import load_ephys_metadata
 from LCNE_patchseq_analysis.data_util.nwb import PatchSeqNWB
 from LCNE_patchseq_analysis.efel.io import load_efel_features_from_roi
 from LCNE_patchseq_analysis.panel_app.components.scatter_plot import ScatterPlot
+from LCNE_patchseq_analysis.panel_app.components.spike_analysis import RawSpikeAnalysis
 from LCNE_patchseq_analysis.pipeline_util.s3 import (
     get_public_url_cell_summary,
     get_public_url_sweep,
@@ -74,13 +75,15 @@ class PatchSeqNWBApp(param.Parameterized):
             "injection region",
             "Y (D --> V)",
         ]
-
         # Turn Date to datetime
         self.df_meta.loc[:, "Date_str"] = self.df_meta["Date"]  # Keep the original Date as string
         self.df_meta.loc[:, "Date"] = pd.to_datetime(self.df_meta["Date"], errors="coerce")
 
         # Initialize scatter plot component
         self.scatter_plot = ScatterPlot(self.df_meta, self.data_holder)
+        
+        # Initialize spike analysis component
+        self.raw_spike_analysis = RawSpikeAnalysis(self.df_meta)
 
         # Create the cell selector panel once.
         self.cell_selector_panel = self.create_cell_selector_panel()
@@ -347,9 +350,9 @@ class PatchSeqNWBApp(param.Parameterized):
         def get_s3_sweep_images(sweep_number):
             s3_url = get_public_url_sweep(ephys_roi_id, sweep_number)
             images = []
-            if "sweep" in s3_url:
+            if isinstance(s3_url, dict) and "sweep" in s3_url:
                 images.append(pn.pane.PNG(s3_url["sweep"], width=800, height=400))
-            if "spikes" in s3_url:
+            if isinstance(s3_url, dict) and "spikes" in s3_url:
                 images.append(pn.pane.PNG(s3_url["spikes"], width=800, height=400))
             return pn.Column(*images) if images else pn.pane.Markdown("No S3 images available")
 
@@ -394,31 +397,32 @@ class PatchSeqNWBApp(param.Parameterized):
         )
 
         # Apply conditional row highlighting.
-        tab_sweeps.style.apply(
-            PatchSeqNWBApp.highlight_selected_rows,
-            highlight_subset=df_sweeps_valid.query("passed == True")["sweep_number"].tolist(),
-            color="lightgreen",
-            fields=["passed"],
-            axis=1,
-        ).apply(
-            PatchSeqNWBApp.highlight_selected_rows,
-            highlight_subset=df_sweeps_valid.query("passed != passed")["sweep_number"].tolist(),
-            color="salmon",
-            fields=["passed"],
-            axis=1,
-        ).apply(
-            PatchSeqNWBApp.highlight_selected_rows,
-            highlight_subset=df_sweeps_valid.query("passed == False")["sweep_number"].tolist(),
-            color="yellow",
-            fields=["passed"],
-            axis=1,
-        ).apply(
-            PatchSeqNWBApp.highlight_selected_rows,
-            highlight_subset=df_sweeps_valid.query("num_spikes > 0")["sweep_number"].tolist(),
-            color="lightgreen",
-            fields=["num_spikes"],
-            axis=1,
-        )
+        if hasattr(tab_sweeps, "style"):
+            tab_sweeps.style.apply(
+                PatchSeqNWBApp.highlight_selected_rows,
+                highlight_subset=df_sweeps_valid.query("passed == True")["sweep_number"].tolist(),
+                color="lightgreen",
+                fields=["passed"],
+                axis=1,
+            ).apply(
+                PatchSeqNWBApp.highlight_selected_rows,
+                highlight_subset=df_sweeps_valid.query("passed != passed")["sweep_number"].tolist(),
+                color="salmon",
+                fields=["passed"],
+                axis=1,
+            ).apply(
+                PatchSeqNWBApp.highlight_selected_rows,
+                highlight_subset=df_sweeps_valid.query("passed == False")["sweep_number"].tolist(),
+                color="yellow",
+                fields=["passed"],
+                axis=1,
+            ).apply(
+                PatchSeqNWBApp.highlight_selected_rows,
+                highlight_subset=df_sweeps_valid.query("num_spikes > 0")["sweep_number"].tolist(),
+                color="lightgreen",
+                fields=["num_spikes"],
+                axis=1,
+            )
 
         # --- Synchronize table selection with sweep number ---
         def update_sweep_from_table(event):
@@ -460,6 +464,47 @@ class PatchSeqNWBApp(param.Parameterized):
         pn.config.throttled = False
         pane_cell_selector = self.cell_selector_panel
 
+        # Create spike analysis controls and plots
+        spike_controls = self.raw_spike_analysis.create_plot_controls()
+
+        def update_spike_plots(extract_from, n_clusters, n_pca_components, alpha, width, height):
+            try:
+                # Extract representative spikes
+                t, v, dvdt, t_dvdt = self.raw_spike_analysis.extract_representative_spikes(
+                    extract_from=extract_from,
+                    if_normalize_v=True,
+                    normalize_window_v=(-2, 4),
+                    if_normalize_dvdt=True,
+                    normalize_window_dvdt=(-2, 0),
+                    if_smooth_dvdt=False,
+                )
+                
+                # Create spike analysis plots
+                return self.raw_spike_analysis.create_spike_analysis_plots(
+                    t=t,
+                    v=v,
+                    dvdt=dvdt,
+                    t_dvdt=t_dvdt,
+                    n_clusters=n_clusters,
+                    n_pca_components=n_pca_components,
+                    alpha=alpha,
+                    width=width,
+                    height=height,
+                )
+            except Exception as e:
+                return pn.pane.Markdown(f"Error: {str(e)}")
+        
+        # Create spike analysis plots
+        spike_plots = pn.bind(
+            update_spike_plots,
+            extract_from=spike_controls["extract_from"].param.value,
+            n_clusters=spike_controls["n_clusters"].param.value,
+            n_pca_components=spike_controls["n_pca_components"].param.value,
+            alpha=spike_controls["alpha_slider"].param.value,
+            width=spike_controls["plot_width"].param.value,
+            height=spike_controls["plot_height"].param.value,
+        )
+
         # Bind the sweep panel to the current cell selection.
         pane_one_cell = pn.bind(
             self.create_sweep_panel, ephys_roi_id=self.data_holder.param.ephys_roi_id
@@ -487,6 +532,14 @@ class PatchSeqNWBApp(param.Parameterized):
                 pn.pane.Markdown(f"## Cell selector (N = {len(self.df_meta)})"),
             ),
             pane_cell_selector,
+            pn.layout.Divider(),
+            pn.Column(
+                pn.pane.Markdown("## Raw Spike Analysis"),
+                pn.Row(
+                    pn.Column(*spike_controls.values()),
+                    spike_plots,
+                ),
+            ),
             pn.layout.Divider(),
             show_sweeps_button,
             dynamic_content,
