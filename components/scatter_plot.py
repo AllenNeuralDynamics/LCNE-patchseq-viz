@@ -18,6 +18,19 @@ from LCNE_patchseq_analysis.pipeline_util.s3 import get_public_url_cell_summary
 
 logger = logging.getLogger(__name__)
 
+# Define available color palettes
+COLOR_PALETTES = [
+    "Viridis256",
+    "Plasma256",
+    "Magma256",
+    "Inferno256",
+    "Cividis256",
+    "Turbo256",
+    "Category10",
+    "Category20",
+    "Category20b",
+    "Category20c",
+]
 
 class ScatterPlot:
     """Handles scatter plot creation and updates."""
@@ -51,32 +64,46 @@ class ScatterPlot:
         # Get numeric and categorical columns
         numeric_cols = self.df_meta.select_dtypes(include=["number"]).columns.tolist()
         categorical_cols = self.df_meta.select_dtypes(include=["object"]).columns.tolist()
-        all_cols = ["None"] + sorted(numeric_cols + categorical_cols)
+        available_cols = sorted(numeric_cols + categorical_cols)
+        
+        # Append [valid N] to the available_cols for display purposes
+        available_cols = [f"{col} [valid {self.df_meta[col].count()}]" for col in available_cols]
+        all_cols = ["None"] + available_cols
 
         controls = {
             "x_axis_select": pn.widgets.Select(
                 name="X Axis",
                 options=all_cols,
-                value="first_spike_AP_duration_half_width @ long_square_rheo, min",
-                width=width,
+                value=[col for col in all_cols 
+                       if "efel_AP_duration_half_width @ long_square_rheo, min" in col][0],
+                sizing_mode="stretch_width",
             ),
             "y_axis_select": pn.widgets.Select(
                 name="Y Axis",
                 options=all_cols,
-                value="Y (D --> V)",
-                width=width,
+                value=[col for col in all_cols 
+                       if "Y (D --> V)" in col][0],
+                sizing_mode="stretch_width",
             ),
             "color_col_select": pn.widgets.Select(
                 name="Color By",
                 options=all_cols,
-                value="injection region",
-                width=width,
+                value=[col for col in all_cols 
+                       if "injection region" in col][0],
+                sizing_mode="stretch_width",
+            ),
+            "color_palette_select": pn.widgets.Select(
+                name="Color Palette",
+                options=COLOR_PALETTES,
+                value="Viridis256",
+                sizing_mode="stretch_width",
             ),
             "size_col_select": pn.widgets.Select(
                 name="Size By",
                 options=all_cols,
-                value="sag_ratio1 @ subthreshold, aver",
-                width=width,
+                value=[col for col in all_cols 
+                       if "efel_sag_ratio1 @ subthreshold, aver" in col][0],
+                sizing_mode="stretch_width",
             ),
             "size_range_slider": pn.widgets.RangeSlider(
                 name="Size Range",
@@ -84,7 +111,7 @@ class ScatterPlot:
                 end=40,
                 value=(10, 30),
                 step=1,
-                width=width,
+                sizing_mode="stretch_width",
             ),
             "size_gamma_slider": pn.widgets.FloatSlider(
                 name="Size Gamma",
@@ -92,7 +119,7 @@ class ScatterPlot:
                 end=5,
                 value=1,
                 step=0.1,
-                width=width,
+                sizing_mode="stretch_width",
             ),
             "alpha_slider": pn.widgets.FloatSlider(
                 name="Alpha",
@@ -100,7 +127,7 @@ class ScatterPlot:
                 end=1,
                 value=0.7,
                 step=0.1,
-                width=width,
+                sizing_mode="stretch_width",
             ),
             "width_slider": pn.widgets.IntSlider(
                 name="Width",
@@ -108,7 +135,7 @@ class ScatterPlot:
                 end=1200,
                 value=800,
                 step=50,
-                width=width,
+                sizing_mode="stretch_width",
             ),
             "height_slider": pn.widgets.IntSlider(
                 name="Height",
@@ -116,7 +143,7 @@ class ScatterPlot:
                 end=1200,
                 value=600,
                 step=50,
-                width=width,
+                sizing_mode="stretch_width",
             ),
             "bins_slider": pn.widgets.IntSlider(
                 name="Histogram bins",
@@ -124,12 +151,12 @@ class ScatterPlot:
                 end=100,
                 value=50,
                 step=1,
-                width=width,
+                sizing_mode="stretch_width",
             ),
             "show_gmm": pn.widgets.Checkbox(
                 name="Show Gaussian Mixture Model",
                 value=True,
-                width=width,
+                sizing_mode="stretch_width",
             ),
             "n_components_x": pn.widgets.IntSlider(
                 name="Number of components (X)",
@@ -137,8 +164,8 @@ class ScatterPlot:
                 end=5,
                 value=2,
                 step=1,
-                width=width,
                 disabled=False,
+                sizing_mode="stretch_width",
             ),
             "n_components_y": pn.widgets.IntSlider(
                 name="Number of components (Y)",
@@ -146,8 +173,8 @@ class ScatterPlot:
                 end=5,
                 value=1,
                 step=1,
-                width=width,
                 disabled=False,
+                sizing_mode="stretch_width",
             ),
             "hist_height_slider": pn.widgets.IntSlider(
                 name="Distribution plot height",
@@ -155,6 +182,14 @@ class ScatterPlot:
                 end=300,
                 value=100,
                 step=10,
+                sizing_mode="stretch_width",
+            ),
+            "font_size_slider": pn.widgets.IntSlider(
+                name="Font Size",
+                start=10,
+                end=30,
+                value=15,
+                sizing_mode="stretch_width",
             ),
         }
 
@@ -177,17 +212,18 @@ class ScatterPlot:
         """Create tooltips for the hover tool."""
 
         tooltips = f"""
-             <div style="text-align: left; flex: auto; white-space: nowrap; margin: 0 10px">
+             <div style="text-align: left; flex: auto; white-space: nowrap; margin: 0 10px; 
+                       border: 2px solid black; padding: 10px;">
                     <span style="font-size: 17px;">
-                        <b>@Date_str, @{{injection region}}, @{{jem-id_cell_specimen}}, #@{{ephys_roi_id}}</b><br>  # noqa: E501
+                        <b>@Date_str, @{{injection region}}, @{{ephys_roi_id}}, 
+                            @{{jem-id_cell_specimen}}</b><br>
                         <b>X = @{{{x_col}}}</b> [{x_col}]<br>
                         <b>Y = @{{{y_col}}}</b> [{y_col}]<br>
                         <b> Color = @{{{color_col}}}</b> [{color_col}]<br>
                         <b> Size = @{{{size_col}}}</b> [{size_col}]<br>
                     </span>
-             </div>
-             <div>
-                 <img src="@cell_summary_url{{safe}}" alt="Cell Summary" style="width: 800px; height: auto;">
+                 <img src="@cell_summary_url{{safe}}" alt="Cell Summary" 
+                        style="width: 800px; height: auto;">
              </div>
              """
 
@@ -322,6 +358,7 @@ class ScatterPlot:
         alpha: float,
         width: int,
         height: int,
+        font_size: int = 14,
         bins: int = 30,
         hist_height_slider: int = 100,
         show_gmm: bool = False,
@@ -329,6 +366,12 @@ class ScatterPlot:
         n_components_y: int = 1,
     ) -> gridplot:
         """Update the scatter plot with new parameters."""
+        # Strip off [valid N] from the column name
+        x_col = x_col.split(" [valid ")[0]
+        y_col = y_col.split(" [valid ")[0]
+        color_col = color_col.split(" [valid ")[0]
+        size_col = size_col.split(" [valid ")[0]
+        
         # Create a new figure for the main scatter plot
         p = figure(
             x_axis_label=x_col,
@@ -351,7 +394,8 @@ class ScatterPlot:
             )
 
         # Determine color mapping
-        color = self.color_mapping.determine_color_mapping(color_col, color_palette, p)
+        color = self.color_mapping.determine_color_mapping(color_col, color_palette,
+                                                           p, font_size=font_size)
 
         # Determine size mapping
         size = self.size_mapping.determine_size_mapping(
@@ -392,13 +436,13 @@ class ScatterPlot:
         p.toolbar.active_drag = p.select_one(BoxZoomTool)
 
         # Set axis label font sizes
-        p.xaxis.axis_label_text_font_size = "14pt"
-        p.yaxis.axis_label_text_font_size = "14pt"
+        p.xaxis.axis_label_text_font_size = f"{font_size}pt"
+        p.yaxis.axis_label_text_font_size = f"{font_size}pt"
 
         # Set major tick label font sizes
-        p.xaxis.major_label_text_font_size = "12pt"
-        p.yaxis.major_label_text_font_size = "12pt"
-
+        p.xaxis.major_label_text_font_size = f"{font_size*0.9}pt"
+        p.yaxis.major_label_text_font_size = f"{font_size*0.9}pt"
+        
         # Create marginal histograms
         x_hist = None
         try:
@@ -436,12 +480,20 @@ class ScatterPlot:
             logger.warning(f"Could not create y histogram: {e}")
             y_hist = None
 
-        # Create grid layout
-        layout = gridplot(
-            [[y_hist, p], [None, x_hist]],
-            toolbar_location="right",
-            merge_tools=True,
-            toolbar_options=dict(logo=None),
-        )
 
+        # Count non-NaN values grouped by "injection region"
+        count_non_nan = self.df_meta.groupby("injection region")[[x_col, y_col]].count().T
+        count_non_nan.insert(0, "Total", count_non_nan.sum(axis=1))
+        count_non_nan.index = pd.Index(["X", "Y"], name="Valid N")
+
+        # Create grid layout
+        layout = pn.Column(
+            gridplot(
+                [[y_hist, p], [None, x_hist]],
+                toolbar_location="right",
+                merge_tools=True,
+                toolbar_options=dict(logo=None),
+            ),
+            pn.pane.Markdown(count_non_nan.to_markdown()),
+        )
         return layout

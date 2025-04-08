@@ -15,18 +15,6 @@ from bokeh.layouts import column as bokeh_column
 from bokeh.models import (
     BoxZoomTool,
 )
-from bokeh.palettes import (
-    Category10,
-    Category20,
-    Category20b,
-    Category20c,
-    Cividis256,
-    Inferno256,
-    Magma256,
-    Plasma256,
-    Turbo256,
-    Viridis256,
-)
 from bokeh.plotting import figure
 
 from LCNE_patchseq_analysis.data_util.metadata import load_ephys_metadata
@@ -43,20 +31,6 @@ logger = logging.getLogger(__name__)
 
 # pn.extension("tabulator")
 curdoc().title = "LC-NE Patch-seq Data Explorer"
-
-# Define available color palettes
-COLOR_PALETTES = {
-    "Viridis256": Viridis256,
-    "Plasma256": Plasma256,
-    "Magma256": Magma256,
-    "Inferno256": Inferno256,
-    "Cividis256": Cividis256,
-    "Turbo256": Turbo256,
-    "Category10": Category10,
-    "Category20": Category20,
-    "Category20b": Category20b,
-    "Category20c": Category20c,
-}
 
 
 class PatchSeqNWBApp(param.Parameterized):
@@ -82,22 +56,14 @@ class PatchSeqNWBApp(param.Parameterized):
 
         # Load and prepare metadata.
         self.df_meta = load_ephys_metadata(if_with_efel=True)
-        self.df_meta = (
-            self.df_meta.rename(
-                columns={col: col.replace("_tab_master", "") for col in self.df_meta.columns},
-            )
-            .rename(
-                columns={
-                    "x": "X (A --> P)",
-                    "y": "Y (D --> V)",
-                    "z": "Z (L --> R)",
-                }
-            )
-            .sort_values(["injection region"])
+        self.df_meta.rename(
+            columns={
+                "x": "X (A --> P)",
+                "y": "Y (D --> V)",
+                "z": "Z (L --> R)",
+            },
+            inplace=True,
         )
-
-        # Create a copy to avoid SettingWithCopyWarning
-        self.df_meta.loc[:, "LC_targeting"] = self.df_meta["LC_targeting"].fillna("unknown")
 
         self.cell_key = [
             "Date",
@@ -193,16 +159,10 @@ class PatchSeqNWBApp(param.Parameterized):
         """
         Create the scatter plot panel using the ScatterPlot component.
         """
+        control_width = 300
+        
         # Get plot controls from the scatter plot component
-        controls = self.scatter_plot.create_plot_controls(width=180)
-
-        # Add color palette selector
-        controls["color_palette_select"] = pn.widgets.Select(
-            name="Color Palette",
-            options=list(COLOR_PALETTES.keys()),
-            value="Viridis256",
-            width=180,
-        )
+        controls = self.scatter_plot.create_plot_controls(width=control_width)
 
         # Create a reactive scatter plot that updates when controls change
         scatter_plot = pn.bind(
@@ -217,6 +177,7 @@ class PatchSeqNWBApp(param.Parameterized):
             controls["alpha_slider"].param.value_throttled,
             controls["width_slider"].param.value_throttled,
             controls["height_slider"].param.value_throttled,
+            controls["font_size_slider"].param.value_throttled,
             controls["bins_slider"].param.value_throttled,
             controls["hist_height_slider"].param.value_throttled,
             controls["show_gmm"].param.value,
@@ -249,15 +210,18 @@ class PatchSeqNWBApp(param.Parameterized):
                             controls["width_slider"],
                             controls["height_slider"],
                             controls["hist_height_slider"],
+                            controls["font_size_slider"],
+                            width=control_width - 30,
                         ),
                     ),
                     active=[1],
                 ),
-                margin=(0, 20, 20, 0),  # top, right, bottom, left margins in pixels
-                width=200,
+                margin=(0, 50, 20, 0),  # top, right, bottom, left margins in pixels
+                width=control_width,
             ),
             scatter_plot,
             margin=(0, 20, 20, 20),  # top, right, bottom, left margins in pixels
+            # width=800,
         )
 
     def create_cell_selector_panel(self):
@@ -269,16 +233,16 @@ class PatchSeqNWBApp(param.Parameterized):
         cols.sort()
         selectable_cols = [col for col in cols if col not in self.cell_key]
         col_selector = pn.widgets.MultiSelect(
-            name="Add Columns to show",
+            name="Add more columns to show in the table",
             options=selectable_cols,
             value=[
                 "width_rheo",
-                "first_spike_AP_width @ long_square_rheo, aver",
+                "efel_AP_width @ long_square_rheo, aver",
                 "sag",
-                "sag_ratio1 @ subthreshold, aver",
+                "efel_sag_ratio1 @ subthreshold, aver",
             ],  # start with no additional columns
             height=300,
-            width=430,
+            width=500,
         )
 
         def add_df_meta_col(selected_columns):
@@ -521,7 +485,6 @@ class PatchSeqNWBApp(param.Parameterized):
             pn.pane.Markdown("# Patch-seq Ephys Data Explorer\n"),
             pn.Column(
                 pn.pane.Markdown(f"## Cell selector (N = {len(self.df_meta)})"),
-                width=400,
             ),
             pane_cell_selector,
             pn.layout.Divider(),
