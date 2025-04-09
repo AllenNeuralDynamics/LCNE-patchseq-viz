@@ -98,14 +98,14 @@ class RawSpikeAnalysis:
 
         return df_v_norm, df_dvdt_norm
 
-    def create_plot_controls(self, width: int = 180) -> dict:
+    def create_plot_controls(self) -> dict:
         """Create control widgets for spike analysis."""
         controls = {
             "extract_from": pn.widgets.Select(
                 name="Extract spikes from",
                 options=sorted(self.extract_from_options.tolist()),
                 value="long_square_rheo, min",
-                width=width,
+                sizing_mode="stretch_width",
             ),
             "normalize_window_v": pn.widgets.RangeSlider(
                 name="V Normalization Window",
@@ -113,7 +113,7 @@ class RawSpikeAnalysis:
                 end=7,
                 value=(-2, 4),
                 step=0.5,
-                width=width,
+                sizing_mode="stretch_width",
             ),
             "normalize_window_dvdt": pn.widgets.RangeSlider(
                 name="dV/dt Normalization Window",
@@ -121,7 +121,7 @@ class RawSpikeAnalysis:
                 end=6,
                 value=(-2, 0),
                 step=0.5,
-                width=width,
+                sizing_mode="stretch_width",
             ),
             "n_clusters": pn.widgets.IntSlider(
                 name="Number of Clusters",
@@ -129,12 +129,12 @@ class RawSpikeAnalysis:
                 end=7,
                 value=2,
                 step=1,
-                width=width,
+                sizing_mode="stretch_width",
             ),
             "if_show_cluster_on_retro": pn.widgets.Checkbox(
                 name="Show type color for Retro",
                 value=False,
-                width=width,
+                sizing_mode="stretch_width",
             ),
             "marker_size": pn.widgets.IntSlider(
                 name="Marker Size",
@@ -142,7 +142,7 @@ class RawSpikeAnalysis:
                 end=20,
                 value=13,
                 step=1,
-                width=width,
+                sizing_mode="stretch_width",
             ),
             "alpha_slider": pn.widgets.FloatSlider(
                 name="Alpha",
@@ -150,15 +150,15 @@ class RawSpikeAnalysis:
                 end=1.0,
                 value=0.3,
                 step=0.1,
-                width=width,
+                sizing_mode="stretch_width",
             ),
             "plot_width": pn.widgets.IntSlider(
                 name="Plot Width",
                 start=200,
                 end=800,
-                value=600,
+                value=550,
                 step=50,
-                width=width,
+                sizing_mode="stretch_width",
             ),
             "plot_height": pn.widgets.IntSlider(
                 name="Plot Height",
@@ -166,7 +166,7 @@ class RawSpikeAnalysis:
                 end=800,
                 value=550,
                 step=50,
-                width=width,
+                sizing_mode="stretch_width",
             ),
             "font_size": pn.widgets.IntSlider(
                 name="Font Size",
@@ -174,7 +174,7 @@ class RawSpikeAnalysis:
                 end=24,
                 value=12,
                 step=1,
-                width=width,
+                sizing_mode="stretch_width",
             ),
         }
         return controls
@@ -234,8 +234,8 @@ class RawSpikeAnalysis:
     ) -> gridplot:
         """Create plots for spike analysis including PCA and clustering."""
         # Perform PCA and clustering
-        df_v_proj_PCA, clusters, pca, metrics = self.perform_PCA_clustering(df_v_norm, n_clusters)        
-        colors = ["black", "darkgray", "red", "green", "blue"][:n_clusters]
+        df_v_proj_PCA, clusters, pca, metrics = self.perform_PCA_clustering(df_v_norm, n_clusters)      
+        cluster_colors = ["black", "darkgray", "red", "green", "blue"][:n_clusters]
 
         # Common plot settings
         plot_settings = dict(
@@ -247,7 +247,7 @@ class RawSpikeAnalysis:
         p1 = figure(
             x_axis_label="PC1",
             y_axis_label="PC2",
-            tools="pan,reset,hover,tap,wheel_zoom",
+            tools="pan,reset,hover,tap,wheel_zoom,box_select,lasso_select",
             **plot_settings
         )
         p2 = figure(
@@ -255,7 +255,7 @@ class RawSpikeAnalysis:
             x_axis_label="Time (ms)",
             y_axis_label="V",
             x_range=(-4.1, 7.1),
-            tools="pan,reset,hover,tap",
+            tools="pan,reset,hover,tap,wheel_zoom,box_select,lasso_select",
             **plot_settings
         )
         p3 = figure(
@@ -263,7 +263,7 @@ class RawSpikeAnalysis:
             x_axis_label="Time (ms)",
             y_axis_label="dV/dt",
             x_range=(-3.1, 6.1),
-            tools="pan,reset,hover,tap",
+            tools="pan,reset,hover,tap,wheel_zoom,box_select,lasso_select",
             **plot_settings
         )
 
@@ -284,28 +284,31 @@ class RawSpikeAnalysis:
 
         # -- Plot PCA scatter with contours --
         # Create a single ColumnDataSource for all clusters
-        df_v_proj_PCA["color"] = [colors[i] for i in df_v_proj_PCA["PCA_cluster_id"]]
         # If injection region is not "Non-Retro", set color to None
-        if not if_show_cluster_on_retro:
-            df_v_proj_PCA.loc[df_v_proj_PCA["injection region"] != "Non-Retro", "color"] = None
-        source = ColumnDataSource(df_v_proj_PCA)
-        
-        p1.scatter(
-            x="raw_PC_1",
-            y="raw_PC_2",
-            source=source,
-            size=marker_size,
-            color='color',
-            alpha=alpha,
-            # legend_label=[f"Cluster {i+1}" for i in range(n_clusters)],
-            hover_color="blue",
-            selection_color="blue",
-        )
-
+                
         for i in df_v_proj_PCA["PCA_cluster_id"].unique():
-            values = df_v_proj_PCA.query("PCA_cluster_id == @i").loc[:, ["raw_PC_1", "raw_PC_2"]].values
+            # Add dots
+            querystr = "PCA_cluster_id == @i"
+            group_label = f"Cluster {i+1}"
+            if not if_show_cluster_on_retro:
+                querystr += " and `injection region` == 'Non-Retro'"
+                group_label += " (Non-Retro)"
+            source = ColumnDataSource(df_v_proj_PCA.query(querystr))
+
+            p1.scatter(
+                x="raw_PC_1",
+                y="raw_PC_2",
+                source=source,
+                size=marker_size,
+                color=cluster_colors[i],
+                alpha=alpha,
+                legend_label=group_label,
+                hover_color="blue",
+                selection_color="blue",
+            )        
             
             # Add contours
+            values = df_v_proj_PCA.query("PCA_cluster_id == @i").loc[:, ["raw_PC_1", "raw_PC_2"]].values
             mean = np.mean(values, axis=0)
             cov = np.cov(values.T)
             x, y = np.mgrid[
@@ -315,40 +318,26 @@ class RawSpikeAnalysis:
             pos = np.dstack((x, y))
             rv = multivariate_normal(mean, cov)
             z = rv.pdf(pos)
-            add_counter(p1, x, y, z, levels=3, line_color=colors[i], alpha=1)
-            
-        # Add region colors to the all plots
-        for region in self.df_meta["injection region"].unique():
-            if region == "Non-Retro":
-                continue            
-            p1.scatter(
-                df_v_proj_PCA.query("`injection region` == @region").loc[:, "raw_PC_1"],
-                df_v_proj_PCA.query("`injection region` == @region").loc[:, "raw_PC_2"],
-                color=REGION_COLOR_MAPPER[region],
-                alpha=1,
-                size=marker_size,
-                legend_label=region,
-            )
+            add_counter(p1, x, y, z, levels=3, line_color=cluster_colors[i], alpha=1)
           
         # Add metrics to the plot
         p1.title.text = f"PCA on raw + K-means Clustering (n_clusters = {n_clusters})\n" \
                         f"Silhouette Score: {metrics['silhouette_avg']:.3f}\n"
-        p1.legend.click_policy = "hide"
         p1.toolbar.active_scroll = p1.select_one(WheelZoomTool)
             
         # Add vertical lines for normalization windows
         p2.add_layout(Span(
             location=self.normalize_window_v[0], dimension='height', 
-            line_color='red', line_dash='dashed', line_width=2))
+            line_color='blue', line_dash='dashed', line_width=2))
         p2.add_layout(Span(
             location=self.normalize_window_v[1], dimension='height', 
-            line_color='red', line_dash='dashed', line_width=2))
+            line_color='blue', line_dash='dashed', line_width=2))
         p3.add_layout(Span(
             location=self.normalize_window_dvdt[0], dimension='height', 
-            line_color='red', line_dash='dashed', line_width=2))
+            line_color='blue', line_dash='dashed', line_width=2))
         p3.add_layout(Span(
             location=self.normalize_window_dvdt[1], dimension='height', 
-            line_color='red', line_dash='dashed', line_width=2))
+            line_color='blue', line_dash='dashed', line_width=2))
 
         # Add boxzoomtool to p2 and p3
         box_zoom_x = BoxZoomTool(dimensions="auto")
@@ -358,38 +347,82 @@ class RawSpikeAnalysis:
         p3.add_tools(box_zoom_x)
         p3.toolbar.active_drag = box_zoom_x
 
-        # Plot voltage traces
+        # Plot voltage and dV/dt traces
         for i in range(n_clusters):
             mask = clusters == i
-            p2.multi_line(
-                [df_v_norm.columns.values] * sum(mask),
-                df_v_norm.values[mask].tolist(),
-                color=colors[i],
-                alpha=alpha,
-                hover_line_color="blue",
-                hover_line_alpha=1.0,
-                hover_line_width=4,
-                selection_line_color="blue",
-                selection_line_alpha=1.0,
-                selection_line_width=4,
-            )
+            group_label = f"Cluster {i+1}"
 
-        # Plot dV/dt traces
-        for i in range(n_clusters):
-            mask = clusters == i
-            p3.multi_line(
-                [df_dvdt_norm.columns.values] * sum(mask),
-                df_dvdt_norm.values[mask].tolist(),
-                color=colors[i],
-                alpha=alpha,
-                hover_line_color="blue",
-                hover_line_alpha=1.0,
-                hover_line_width=4,
-                selection_line_color="blue",
-                selection_line_alpha=1.0,
-                selection_line_width=4,
+            if not if_show_cluster_on_retro:
+                mask = mask & (df_v_proj_PCA["injection region"] == "Non-Retro")
+                group_label = f"Cluster {i+1} (Non-Retro)"
+            
+            # Common line properties
+            line_props = {
+                'alpha': alpha,
+                'hover_line_color': 'blue',
+                'hover_line_alpha': 1.0,
+                'hover_line_width': 4,
+                'selection_line_color': 'blue',
+                'selection_line_alpha': 1.0,
+                'selection_line_width': 4,
+            }
+            # Plot voltage traces
+            p2.multi_line(
+                xs=[df_v_norm.columns.values] * sum(mask),
+                ys=df_v_norm.values[mask].tolist(),
+                color=cluster_colors[i],
+                **line_props,
+                legend_label=group_label,
             )
-          
+            
+            # Plot dV/dt traces
+            p3.multi_line(
+                xs=[df_dvdt_norm.columns.values] * sum(mask),
+                ys=df_dvdt_norm.values[mask].tolist(),
+                color=cluster_colors[i],
+                **line_props,
+                legend_label=group_label,
+            )        
+            
+            
+        # Add region cluster_colors to the all plots
+        for region in self.df_meta["injection region"].unique():
+            if region == "Non-Retro":
+                continue
+            roi_ids = self.df_meta.query("`injection region` == @region").ephys_roi_id.tolist()
+            p1.scatter(
+                df_v_proj_PCA.query("ephys_roi_id in @roi_ids").loc[:, "raw_PC_1"],
+                df_v_proj_PCA.query("ephys_roi_id in @roi_ids").loc[:, "raw_PC_2"],
+                color=REGION_COLOR_MAPPER[region],
+                alpha=0.8,
+                size=marker_size,
+                legend_label=region,
+            )
+            
+            ys = df_v_norm.query("ephys_roi_id in @roi_ids").values
+            p2.multi_line(
+                xs=[df_v_norm.query("ephys_roi_id in @roi_ids").columns.values] * ys.shape[0],
+                ys=ys.tolist(),
+                color=REGION_COLOR_MAPPER[region],
+                alpha=0.8,
+                legend_label=region,
+            )
+            ys = df_dvdt_norm.query("ephys_roi_id in @roi_ids").values
+            p3.multi_line(
+                xs=[df_dvdt_norm.query("ephys_roi_id in @roi_ids").columns.values] * ys.shape[0],
+                ys=ys.tolist(),
+                color=REGION_COLOR_MAPPER[region],
+                alpha=0.8,
+                legend_label=region,
+            )
+        
+        for p in [p1, p2, p3]:
+            p.legend.nrows = 2
+            p.legend.background_fill_alpha = 0.5
+            p.legend.location = "bottom_center"
+            p.legend.click_policy = "hide" 
+            p.legend.orientation = "horizontal"
+        
         
         # Create grid layout with independent axes
         layout = gridplot([[p2, p1, p3]], toolbar_location="right", merge_tools=False)
