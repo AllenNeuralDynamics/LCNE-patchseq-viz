@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import panel as pn
 from bokeh.layouts import gridplot
+from bokeh.models import Span, BoxZoomTool
 from bokeh.plotting import figure
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
@@ -86,6 +87,9 @@ class RawSpikeAnalysis:
             )[0]
             v = self._normalize(v, idx_range_to_norm)
 
+                
+        self.normalize_window_v = normalize_window_v
+        self.normalize_window_dvdt = normalize_window_dvdt
         return t, v, new_dvdt, t_dvdt
 
     def create_plot_controls(self, width: int = 180) -> dict:
@@ -95,6 +99,22 @@ class RawSpikeAnalysis:
                 name="Extract spikes from",
                 options=sorted(self.extract_from_options.tolist()),
                 value="long_square_rheo, min",
+                width=width,
+            ),
+            "normalize_window_v": pn.widgets.RangeSlider(
+                name="V Normalization Window",
+                start=-4,
+                end=7,
+                value=(-2, 4),
+                step=0.5,
+                width=width,
+            ),
+            "normalize_window_dvdt": pn.widgets.RangeSlider(
+                name="dV/dt Normalization Window",
+                start=-3,
+                end=6,
+                value=(-2, 0),
+                step=0.5,
                 width=width,
             ),
             "n_clusters": pn.widgets.IntSlider(
@@ -168,7 +188,7 @@ class RawSpikeAnalysis:
             title="Voltage Traces",
             x_axis_label="Time (ms)",
             y_axis_label="Voltage",
-            x_range=(-3, 6),
+            x_range=(-4.1, 7.1),
         )
         p3 = figure(
             width=width,
@@ -176,7 +196,7 @@ class RawSpikeAnalysis:
             title="dV/dt Traces",
             x_axis_label="Time (ms)",
             y_axis_label="dV/dt",
-            x_range=(-2, 4),
+            x_range=(-3.1, 6.1),
         )
 
         # Plot PCA scatter with contours
@@ -203,6 +223,28 @@ class RawSpikeAnalysis:
             rv = multivariate_normal(mean, cov)
             z = rv.pdf(pos)
             add_counter(p1, x, y, z, levels=5, line_color=colors[i], alpha=1)
+            
+        # Add vertical lines for normalization windows
+        p2.add_layout(Span(
+            location=self.normalize_window_v[0], dimension='height', 
+            line_color='red', line_dash='dashed', line_width=2))
+        p2.add_layout(Span(
+            location=self.normalize_window_v[1], dimension='height', 
+            line_color='red', line_dash='dashed', line_width=2))
+        p3.add_layout(Span(
+            location=self.normalize_window_dvdt[0], dimension='height', 
+            line_color='red', line_dash='dashed', line_width=2))
+        p3.add_layout(Span(
+            location=self.normalize_window_dvdt[1], dimension='height', 
+            line_color='red', line_dash='dashed', line_width=2))
+
+        # Add boxzoomtool to p2 and p3
+        box_zoom_x = BoxZoomTool(dimensions="width")
+        p2.add_tools(box_zoom_x)
+        p2.toolbar.active_drag = box_zoom_x
+        box_zoom_x = BoxZoomTool(dimensions="width")
+        p3.add_tools(box_zoom_x)
+        p3.toolbar.active_drag = box_zoom_x
 
         # Plot voltage traces
         for i in range(n_clusters):
@@ -219,10 +261,10 @@ class RawSpikeAnalysis:
         # Configure legends
         p1.legend.click_policy = "hide"
         p1.legend.location = "top_right"
-
-        # Create grid layout
-        layout = gridplot([[p1, p2, p3]], toolbar_location="right")
-        return layout 
+        
+        # Create grid layout with independent axes
+        layout = gridplot([[p2, p1, p3]], toolbar_location="right", merge_tools=False)
+        return layout
     
     
     

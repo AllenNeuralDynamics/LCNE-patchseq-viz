@@ -467,14 +467,14 @@ class PatchSeqNWBApp(param.Parameterized):
         # Create spike analysis controls and plots
         spike_controls = self.raw_spike_analysis.create_plot_controls()
 
-        def update_spike_plots(extract_from, n_clusters,  alpha, width, height):
+        def update_spike_plots(extract_from, n_clusters, alpha, width, height, normalize_window_v, normalize_window_dvdt):
             # Extract representative spikes
             t, v, dvdt, t_dvdt = self.raw_spike_analysis.extract_representative_spikes(
                 extract_from=extract_from,
                 if_normalize_v=True,
-                normalize_window_v=(-2, 4),
+                normalize_window_v=normalize_window_v,
                 if_normalize_dvdt=True,
-                normalize_window_dvdt=(-2, 0),
+                normalize_window_dvdt=normalize_window_dvdt,
                 if_smooth_dvdt=False,
             )
             
@@ -491,13 +491,25 @@ class PatchSeqNWBApp(param.Parameterized):
             )
         
         # Create spike analysis plots
+        controls = spike_controls  # shorter name for readability
+        param_keys = [
+            "n_clusters", "alpha_slider", "plot_width",
+            "plot_height", "normalize_window_v", "normalize_window_dvdt"
+        ]
+        params = {
+            k: controls[k].param.value_throttled
+            for k in param_keys
+        }
+        
         spike_plots = pn.bind(
             update_spike_plots,
-            extract_from=spike_controls["extract_from"].param.value,
-            n_clusters=spike_controls["n_clusters"].param.value_throttled,
-            alpha=spike_controls["alpha_slider"].param.value_throttled,
-            width=spike_controls["plot_width"].param.value_throttled,
-            height=spike_controls["plot_height"].param.value_throttled,
+            extract_from=controls["extract_from"].param.value,
+            n_clusters=params["n_clusters"],
+            alpha=params["alpha_slider"],
+            width=params["plot_width"],
+            height=params["plot_height"],
+            normalize_window_v=params["normalize_window_v"],
+            normalize_window_dvdt=params["normalize_window_dvdt"]
         )
 
         # Bind the sweep panel to the current cell selection.
