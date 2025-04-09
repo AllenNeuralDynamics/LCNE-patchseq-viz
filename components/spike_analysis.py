@@ -237,8 +237,9 @@ class RawSpikeAnalysis:
             p1.scatter(
                 v_pca[mask, 0],
                 v_pca[mask, 1],
+                size=10,
                 color=colors[i],
-                alpha=0.8,
+                alpha=0.6,
                 legend_label=f"Cluster {i+1}",
                 hover_color="blue",
                 selection_color="blue",
