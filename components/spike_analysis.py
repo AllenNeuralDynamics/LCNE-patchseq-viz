@@ -6,9 +6,10 @@ import numpy as np
 import pandas as pd
 import panel as pn
 from bokeh.layouts import gridplot
-from bokeh.models import Span, BoxZoomTool, HoverTool, TapTool
+from bokeh.models import Span, BoxZoomTool, HoverTool, TapTool, ColumnDataSource
 from bokeh.plotting import figure
 from sklearn.decomposition import PCA
+from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
 from sklearn.cluster import KMeans
 from scipy.stats import multivariate_normal
 from scipy.signal import savgol_filter
@@ -20,7 +21,7 @@ class RawSpikeAnalysis:
 
     def __init__(self, df_meta: pd.DataFrame):
         """Initialize with metadata dataframe."""
-        self.df_meta = df_meta.copy()
+        self.df_meta = df_meta
                 
         # Load extracted raw spike data
         self.df_spikes = get_public_representative_spikes()
@@ -124,8 +125,8 @@ class RawSpikeAnalysis:
             ),
             "n_clusters": pn.widgets.IntSlider(
                 name="Number of Clusters",
-                start=1,
-                end=5,
+                start=2,
+                end=7,
                 value=2,
                 step=1,
                 width=width,
@@ -175,11 +176,6 @@ class RawSpikeAnalysis:
             n_clusters : int
                 Number of clusters for K-means
         
-        Returns:
-            tuple: (v_pca, clusters, pca)
-                v_pca: PCA-transformed data
-                clusters: Cluster assignments
-                pca: PCA object for later use
         """
         # Perform PCA
         pca = PCA()
@@ -189,12 +185,21 @@ class RawSpikeAnalysis:
         # K-means clustering
         kmeans = KMeans(n_clusters=n_clusters, random_state=42)
         clusters = kmeans.fit_predict(v_pca[:, :2])
+        
+        # Calculate metrics
+        silhouette_avg = silhouette_score(v_pca[:, :2], clusters)
+        metrics = {
+            "silhouette_avg": silhouette_avg,
+        }
 
+        # Save data
+        df_v_proj_PCA = pd.DataFrame(v_pca, index=df_v_norm.index)
+        
         # Add cluster information to df_v_norm
         clusters_df = pd.DataFrame(clusters, index=df_v_norm.index, columns=["PCA_cluster_id"])
-        self.df_meta = self.df_meta.merge(clusters_df, on="ephys_roi_id", how="left")
+        # self.df_meta = self.df_meta.merge(clusters_df, on="ephys_roi_id", how="left")
 
-        return v_pca, clusters, pca
+        return df_v_proj_PCA, clusters, pca, metrics
 
     def create_raw_PCA_plots(
         self,
@@ -208,7 +213,7 @@ class RawSpikeAnalysis:
     ) -> gridplot:
         """Create plots for spike analysis including PCA and clustering."""
         # Perform PCA and clustering
-        v_pca, clusters, pca = self.perform_PCA_clustering(df_v_norm, n_clusters)        
+        df_v_proj_PCA, clusters, pca, metrics = self.perform_PCA_clustering(df_v_norm, n_clusters)        
         colors = ["black", "darkgray", "red", "green", "blue"][:n_clusters]
 
         # Common plot settings
@@ -219,7 +224,6 @@ class RawSpikeAnalysis:
 
         # Create figures
         p1 = figure(
-            title=f"PCA on raw + K-means Clustering (n_clusters = {n_clusters})",
             x_axis_label="PC1",
             y_axis_label="PC2",
             tools="pan,reset,hover,tap",
@@ -257,33 +261,47 @@ class RawSpikeAnalysis:
             if p.legend:
                 p.legend.label_text_font_size = "12pt"
 
+
         # Plot PCA scatter with contours
+        # Create a single ColumnDataSource for all clusters
+        source_data = {
+            'x': df_v_proj_PCA.iloc[:, 0],
+            'y': df_v_proj_PCA.iloc[:, 1],
+            'color': [colors[i] for i in clusters],
+            'alpha': [0.7] * len(clusters)
+        }
+        source = ColumnDataSource(data=source_data)
+        
+        # Create a single scatter plot for all points
+        p1.scatter(
+            x='x',
+            y='y',
+            source=source,
+            size=10,
+            color='color',
+            alpha='alpha',
+            # legend_label=[f"Cluster {i+1}" for i in range(n_clusters)],
+            hover_color="blue",
+            selection_color="blue",
+        )
+
         for i in range(n_clusters):
             mask = clusters == i
-
-            # Scatter plot
-            p1.scatter(
-                v_pca[mask, 0],
-                v_pca[mask, 1],
-                size=10,
-                color=colors[i],
-                alpha=0.6,
-                legend_label=f"Cluster {i+1}",
-                hover_color="blue",
-                selection_color="blue",
-            )
-
             # Add contours
-            mean = np.mean(v_pca[mask, :2], axis=0)
-            cov = np.cov(v_pca[mask, :2].T)
+            mean = np.mean(df_v_proj_PCA.values[mask, :2], axis=0)
+            cov = np.cov(df_v_proj_PCA.values[mask, :2].T)
             x, y = np.mgrid[
-                v_pca[:, 0].min():v_pca[:, 0].max():100j,
-                v_pca[:, 1].min():v_pca[:, 1].max():100j,
+                df_v_proj_PCA.values[:, 0].min():df_v_proj_PCA.values[:, 0].max():100j,
+                df_v_proj_PCA.values[:, 1].min():df_v_proj_PCA.values[:, 1].max():100j,
             ]
             pos = np.dstack((x, y))
             rv = multivariate_normal(mean, cov)
             z = rv.pdf(pos)
             add_counter(p1, x, y, z, levels=3, line_color=colors[i], alpha=1)
+            
+        # Add metrics to the plot
+        p1.title.text = f"PCA on raw + K-means Clustering (n_clusters = {n_clusters})\n" \
+                        f"Silhouette Score: {metrics['silhouette_avg']:.3f}\n"
             
         # Add vertical lines for normalization windows
         p2.add_layout(Span(
@@ -338,10 +356,6 @@ class RawSpikeAnalysis:
                 selection_line_alpha=1.0,
                 selection_line_width=4,
             )
-
-        # Configure legends
-        p1.legend.click_policy = "hide"
-        p1.legend.location = "top_right"
         
         # Create grid layout with independent axes
         layout = gridplot([[p2, p1, p3]], toolbar_location="right", merge_tools=False)
