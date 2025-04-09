@@ -129,7 +129,7 @@ class RawSpikeAnalysis:
             "n_clusters": pn.widgets.IntSlider(
                 name="Number of Clusters",
                 start=2,
-                end=7,
+                end=5,
                 value=2,
                 step=1,
                 sizing_mode="stretch_width",
@@ -270,7 +270,7 @@ class RawSpikeAnalysis:
         """Create plots for spike analysis including PCA and clustering."""
         # Perform PCA and clustering
         df_v_proj_PCA, clusters, pca, metrics = self.perform_PCA_clustering(df_v_norm, n_clusters)      
-        cluster_colors = ["black", "darkgray", "red", "green", "blue"][:n_clusters]
+        cluster_colors = ["black", "darkgray", "darkblue", "cyan", "darkorange"][:n_clusters]
 
         # Common plot settings
         plot_settings = dict(
