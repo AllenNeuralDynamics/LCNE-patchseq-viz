@@ -149,6 +149,14 @@ class RawSpikeAnalysis:
                 step=50,
                 width=width,
             ),
+            "font_size": pn.widgets.IntSlider(
+                name="Font Size",
+                start=8,
+                end=24,
+                value=12,
+                step=1,
+                width=width,
+            ),
         }
         return controls
 
@@ -162,6 +170,7 @@ class RawSpikeAnalysis:
         alpha: float = 0.3,
         width: int = 400,
         height: int = 400,
+        font_size: int = 12,
     ) -> gridplot:
         """Create plots for spike analysis including PCA and clustering."""
         # Perform PCA
@@ -174,30 +183,48 @@ class RawSpikeAnalysis:
 
         colors = ["black", "darkgray", "red", "green", "blue"][:n_clusters]
 
+        # Common plot settings
+        plot_settings = dict(
+            width=width,
+            height=height
+        )
+
         # Create figures
         p1 = figure(
-            width=width,
-            height=height,
             title="PCA Clustering",
             x_axis_label="PC1",
             y_axis_label="PC2",
+            **plot_settings
         )
         p2 = figure(
-            width=width,
-            height=height,
-            title="Voltage Traces",
+            title="V",
             x_axis_label="Time (ms)",
             y_axis_label="Voltage",
             x_range=(-4.1, 7.1),
+            **plot_settings
         )
         p3 = figure(
-            width=width,
-            height=height,
-            title="dV/dt Traces",
+            title="dV/dt",
             x_axis_label="Time (ms)",
             y_axis_label="dV/dt",
             x_range=(-3.1, 6.1),
+            **plot_settings
         )
+
+        # Update font sizes after figure creation
+        for p in [p1, p2, p3]:
+            # Set the font sizes for the title and axis labels
+            p.title.text_font_size = "14pt"
+            p.xaxis.axis_label_text_font_size = "14pt"
+            p.yaxis.axis_label_text_font_size = "14pt"
+
+            # Set the font sizes for the major tick labels on the axes
+            p.xaxis.major_label_text_font_size = "12pt"
+            p.yaxis.major_label_text_font_size = "12pt"
+
+            # Set legend font size if legend exists
+            if p.legend:
+                p.legend.label_text_font_size = "12pt"
 
         # Plot PCA scatter with contours
         for i in range(n_clusters):
