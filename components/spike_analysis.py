@@ -110,6 +110,14 @@ class RawSpikeAnalysis:
                 value="long_square_rheo, min",
                 sizing_mode="stretch_width",
             ),
+            "spike_range": pn.widgets.RangeSlider(
+                name="Spike Analysis Range (ms)",
+                start=-5,
+                end=10,
+                value=(-3, 6),
+                step=0.5,
+                sizing_mode="stretch_width",
+            ),
             "normalize_window_v": pn.widgets.RangeSlider(
                 name="V Normalization Window",
                 start=-4,
@@ -266,8 +274,13 @@ class RawSpikeAnalysis:
         font_size: int = 12,
         marker_size: int = 10,
         if_show_cluster_on_retro: bool = True,
+        spike_range: tuple = (-4, 7),
     ) -> gridplot:
         """Create plots for spike analysis including PCA and clustering."""
+        # Filter data based on spike_range
+        df_v_norm = df_v_norm.loc[:, (df_v_norm.columns >= spike_range[0]) & (df_v_norm.columns <= spike_range[1])]
+        df_dvdt_norm = df_dvdt_norm.loc[:, (df_dvdt_norm.columns >= spike_range[0]) & (df_dvdt_norm.columns <= spike_range[1])]
+
         # Perform PCA and clustering
         df_v_proj_PCA, clusters, pca, metrics = self.perform_PCA_clustering(df_v_norm, n_clusters)      
         cluster_colors = ["black", "darkgray", "darkblue", "cyan", "darkorange"][:n_clusters]
@@ -289,7 +302,7 @@ class RawSpikeAnalysis:
             title=f"Raw Vm, normalized between {self.normalize_window_v[0]} to {self.normalize_window_v[1]} ms",
             x_axis_label="Time (ms)",
             y_axis_label="V",
-            x_range=(-4.1, 7.1),
+            x_range=(spike_range[0]-0.1, spike_range[1]+0.1),
             tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
             **plot_settings
         )
@@ -297,7 +310,7 @@ class RawSpikeAnalysis:
             title=f"dV/dt, normalized betwen {self.normalize_window_dvdt[0]} to {self.normalize_window_dvdt[1]} ms",
             x_axis_label="Time (ms)",
             y_axis_label="dV/dt",
-            x_range=(-3.1, 6.1),
+            x_range=(spike_range[0]-0.1, spike_range[1]+0.1),
             tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
             **plot_settings
         )
