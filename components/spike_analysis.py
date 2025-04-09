@@ -240,6 +240,8 @@ class RawSpikeAnalysis:
                 color=colors[i],
                 alpha=0.8,
                 legend_label=f"Cluster {i+1}",
+                hover_color="blue",
+                selection_color="blue",
             )
 
             # Add contours
@@ -269,24 +271,44 @@ class RawSpikeAnalysis:
             line_color='red', line_dash='dashed', line_width=2))
 
         # Add boxzoomtool to p2 and p3
-        box_zoom_x = BoxZoomTool(dimensions="width")
+        box_zoom_x = BoxZoomTool(dimensions="auto")
         p2.add_tools(box_zoom_x)
         p2.toolbar.active_drag = box_zoom_x
-        box_zoom_x = BoxZoomTool(dimensions="width")
+        box_zoom_x = BoxZoomTool(dimensions="auto")
         p3.add_tools(box_zoom_x)
         p3.toolbar.active_drag = box_zoom_x
 
         # Plot voltage traces
         for i in range(n_clusters):
             mask = clusters == i
-            for trace in v[mask]:
-                p2.line(t, trace, color=colors[i], alpha=alpha)
+            p2.multi_line(
+                [t] * len(v[mask]),
+                v[mask].tolist(),
+                color=colors[i],
+                alpha=alpha,
+                hover_line_color="blue",
+                hover_line_alpha=1.0,
+                hover_line_width=4,
+                selection_line_color="blue",
+                selection_line_alpha=1.0,
+                selection_line_width=4,
+            )
 
         # Plot dV/dt traces
         for i in range(n_clusters):
             mask = clusters == i
-            for trace in dvdt[mask]:
-                p3.line(t_dvdt, trace, color=colors[i], alpha=alpha)
+            p3.multi_line(
+                [t_dvdt] * len(dvdt[mask]),
+                dvdt[mask].tolist(),
+                color=colors[i],
+                alpha=alpha,
+                hover_line_color="blue",
+                hover_line_alpha=1.0,
+                hover_line_width=4,
+                selection_line_color="blue",
+                selection_line_alpha=1.0,
+                selection_line_width=4,
+            )
 
         # Configure legends
         p1.legend.click_policy = "hide"

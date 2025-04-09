@@ -97,14 +97,14 @@ class PatchSeqNWBApp(param.Parameterized):
         stimulus = raw.get_stimulus(sweep)[::downsample_factor]
         time = raw.get_time(sweep)[::downsample_factor]
 
-        box_zoom_x = BoxZoomTool(dimensions="width")
+        box_zoom_auto = BoxZoomTool(dimensions="auto")
 
         # Create the voltage trace plot
         voltage_plot = figure(
             title=f"Full traces - Sweep number {sweep} (downsampled {downsample_factor}x)",
             height=300,
-            tools=["hover", box_zoom_x, "box_zoom", "wheel_zoom", "reset", "pan"],
-            active_drag=box_zoom_x,
+            tools=["hover", box_zoom_auto, "box_zoom", "wheel_zoom", "reset", "pan"],
+            active_drag=box_zoom_auto,
             x_range=(0, time[-1]),
             y_axis_label="Vm (mV)",
             sizing_mode="stretch_width",
@@ -114,8 +114,8 @@ class PatchSeqNWBApp(param.Parameterized):
         # Create the stimulus plot
         stim_plot = figure(
             height=150,
-            tools=["hover", box_zoom_x, "box_zoom", "wheel_zoom", "reset", "pan"],
-            active_drag=box_zoom_x,
+            tools=["hover", box_zoom_auto, "box_zoom", "wheel_zoom", "reset", "pan"],
+            active_drag=box_zoom_auto,
             x_range=voltage_plot.x_range,  # Link x ranges
             x_axis_label="Time (ms)",
             y_axis_label="I (pA)",
