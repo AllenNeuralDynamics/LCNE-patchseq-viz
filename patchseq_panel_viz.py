@@ -469,7 +469,7 @@ class PatchSeqNWBApp(param.Parameterized):
 
         def update_spike_plots(extract_from, n_clusters, alpha, width, height, normalize_window_v, normalize_window_dvdt):
             # Extract representative spikes
-            t, v, dvdt, t_dvdt = self.raw_spike_analysis.extract_representative_spikes(
+            df_v_norm, df_dvdt_norm = self.raw_spike_analysis.extract_representative_spikes(
                 extract_from=extract_from,
                 if_normalize_v=True,
                 normalize_window_v=normalize_window_v,
@@ -479,11 +479,9 @@ class PatchSeqNWBApp(param.Parameterized):
             )
             
             # Create spike analysis plots
-            return self.raw_spike_analysis.create_spike_analysis_plots(
-                t=t,
-                v=v,
-                dvdt=dvdt,
-                t_dvdt=t_dvdt,
+            return self.raw_spike_analysis.create_raw_PCA_plots(
+                df_v_norm=df_v_norm,
+                df_dvdt_norm=df_dvdt_norm,
                 n_clusters=n_clusters,
                 alpha=alpha,
                 width=width,

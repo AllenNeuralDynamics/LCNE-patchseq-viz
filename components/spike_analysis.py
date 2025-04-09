@@ -20,7 +20,7 @@ class RawSpikeAnalysis:
 
     def __init__(self, df_meta: pd.DataFrame):
         """Initialize with metadata dataframe."""
-        self.df_meta = df_meta
+        self.df_meta = df_meta.copy()
                 
         # Load extracted raw spike data
         self.df_spikes = get_public_representative_spikes()
@@ -87,10 +87,15 @@ class RawSpikeAnalysis:
             )[0]
             v = self._normalize(v, idx_range_to_norm)
 
-                
         self.normalize_window_v = normalize_window_v
         self.normalize_window_dvdt = normalize_window_dvdt
-        return t, v, new_dvdt, t_dvdt
+
+        # Create dictionary with ephys_roi_id as keys
+        df_v_norm = pd.DataFrame(v, index=df_waveforms.index.get_level_values(0), columns=t)
+        df_dvdt_norm = pd.DataFrame(
+            new_dvdt, index=df_waveforms.index.get_level_values(0), columns=t_dvdt)
+
+        return df_v_norm, df_dvdt_norm
 
     def create_plot_controls(self, width: int = 180) -> dict:
         """Create control widgets for spike analysis."""
@@ -145,7 +150,7 @@ class RawSpikeAnalysis:
                 name="Plot Height",
                 start=200,
                 end=800,
-                value=600,
+                value=550,
                 step=50,
                 width=width,
             ),
@@ -160,12 +165,41 @@ class RawSpikeAnalysis:
         }
         return controls
 
-    def create_spike_analysis_plots(
+    def perform_PCA_clustering(self, df_v_norm: pd.DataFrame, n_clusters: int = 2):
+        """
+        Perform PCA and K-means clustering on the voltage traces.
+        
+        Parameters:
+            df_v_norm : pd.DataFrame
+                Normalized voltage traces
+            n_clusters : int
+                Number of clusters for K-means
+        
+        Returns:
+            tuple: (v_pca, clusters, pca)
+                v_pca: PCA-transformed data
+                clusters: Cluster assignments
+                pca: PCA object for later use
+        """
+        # Perform PCA
+        pca = PCA()
+        v = df_v_norm.values
+        v_pca = pca.fit_transform(v)
+
+        # K-means clustering
+        kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+        clusters = kmeans.fit_predict(v_pca[:, :2])
+
+        # Add cluster information to df_v_norm
+        clusters_df = pd.DataFrame(clusters, index=df_v_norm.index, columns=["PCA_cluster_id"])
+        self.df_meta = self.df_meta.merge(clusters_df, on="ephys_roi_id", how="left")
+
+        return v_pca, clusters, pca
+
+    def create_raw_PCA_plots(
         self,
-        t,
-        v,
-        dvdt,
-        t_dvdt,
+        df_v_norm: pd.DataFrame,
+        df_dvdt_norm: pd.DataFrame,
         n_clusters: int = 2,
         alpha: float = 0.3,
         width: int = 400,
@@ -173,14 +207,8 @@ class RawSpikeAnalysis:
         font_size: int = 12,
     ) -> gridplot:
         """Create plots for spike analysis including PCA and clustering."""
-        # Perform PCA
-        pca = PCA()
-        v_pca = pca.fit_transform(v)
-
-        # K-means clustering
-        kmeans = KMeans(n_clusters=n_clusters, random_state=42)
-        clusters = kmeans.fit_predict(v_pca[:, :2])
-
+        # Perform PCA and clustering
+        v_pca, clusters, pca = self.perform_PCA_clustering(df_v_norm, n_clusters)        
         colors = ["black", "darkgray", "red", "green", "blue"][:n_clusters]
 
         # Common plot settings
@@ -200,7 +228,7 @@ class RawSpikeAnalysis:
         p2 = figure(
             title=f"Raw Vm, normalized between {self.normalize_window_v[0]} to {self.normalize_window_v[1]} ms",
             x_axis_label="Time (ms)",
-            y_axis_label="Voltage",
+            y_axis_label="V",
             x_range=(-4.1, 7.1),
             tools="pan,reset,hover,tap",
             **plot_settings
@@ -283,8 +311,8 @@ class RawSpikeAnalysis:
         for i in range(n_clusters):
             mask = clusters == i
             p2.multi_line(
-                [t] * len(v[mask]),
-                v[mask].tolist(),
+                [df_v_norm.columns.values] * sum(mask),
+                df_v_norm.values[mask].tolist(),
                 color=colors[i],
                 alpha=alpha,
                 hover_line_color="blue",
@@ -299,8 +327,8 @@ class RawSpikeAnalysis:
         for i in range(n_clusters):
             mask = clusters == i
             p3.multi_line(
-                [t_dvdt] * len(dvdt[mask]),
-                dvdt[mask].tolist(),
+                [df_dvdt_norm.columns.values] * sum(mask),
+                df_dvdt_norm.values[mask].tolist(),
                 color=colors[i],
                 alpha=alpha,
                 hover_line_color="blue",
