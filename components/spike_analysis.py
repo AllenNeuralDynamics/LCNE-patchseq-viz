@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import panel as pn
 from bokeh.layouts import gridplot
-from bokeh.models import Span, BoxZoomTool, WheelZoomTool, ColumnDataSource
+from bokeh.models import Span, BoxZoomTool, WheelZoomTool, ColumnDataSource, HoverTool
 from bokeh.plotting import figure
 from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
@@ -212,13 +212,36 @@ class RawSpikeAnalysis:
         
         # Add cluster information to df_v_norm
         clusters_df = pd.DataFrame(clusters, index=df_v_norm.index, columns=["PCA_cluster_id"])
-        # self.df_meta = self.df_meta.merge(clusters_df, on="ephys_roi_id", how="left")
+        self.df_meta = self.df_meta[
+            [col for col in self.df_meta.columns if col != "PCA_cluster_id"]].merge(
+                clusters_df, on="ephys_roi_id", how="left")
         df_v_proj_PCA = df_v_proj_PCA.merge(clusters_df, on="ephys_roi_id", how="left")
-        df_v_proj_PCA = df_v_proj_PCA.merge(self.df_meta[["ephys_roi_id", "injection region"]], 
-                                            on="ephys_roi_id", 
-                                            how="left")
+        df_v_proj_PCA = df_v_proj_PCA.merge(self.df_meta[
+            ["Date_str", "ephys_roi_id", "injection region", "cell_summary_url", "jem-id_cell_specimen"]],
+            on="ephys_roi_id",
+            how="left"
+            )
 
         return df_v_proj_PCA, clusters, pca, metrics
+    
+    def create_tooltips(
+        self,
+    ):
+        """Create tooltips for the hover tool."""
+
+        tooltips = """
+             <div style="text-align: left; flex: auto; white-space: nowrap; margin: 0 10px; 
+                       border: 2px solid black; padding: 10px;">
+                    <span style="font-size: 17px;">
+                        <b>@Date_str, @{injection region}, @{ephys_roi_id}, 
+                            @{jem-id_cell_specimen}</b><br>
+                    </span>
+                    <img src="@cell_summary_url" alt="Cell Summary" 
+                         style="width: 800px; height: auto;">
+             </div>
+             """
+
+        return tooltips
 
     def create_raw_PCA_plots(
         self,
@@ -247,7 +270,7 @@ class RawSpikeAnalysis:
         p1 = figure(
             x_axis_label="PC1",
             y_axis_label="PC2",
-            tools="pan,reset,hover,tap,wheel_zoom,box_select,lasso_select",
+            tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
             **plot_settings
         )
         p2 = figure(
@@ -255,7 +278,7 @@ class RawSpikeAnalysis:
             x_axis_label="Time (ms)",
             y_axis_label="V",
             x_range=(-4.1, 7.1),
-            tools="pan,reset,hover,tap,wheel_zoom,box_select,lasso_select",
+            tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
             **plot_settings
         )
         p3 = figure(
@@ -263,7 +286,7 @@ class RawSpikeAnalysis:
             x_axis_label="Time (ms)",
             y_axis_label="dV/dt",
             x_range=(-3.1, 6.1),
-            tools="pan,reset,hover,tap,wheel_zoom,box_select,lasso_select",
+            tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
             **plot_settings
         )
 
@@ -293,8 +316,8 @@ class RawSpikeAnalysis:
             if not if_show_cluster_on_retro:
                 querystr += " and `injection region` == 'Non-Retro'"
                 group_label += " (Non-Retro)"
+                
             source = ColumnDataSource(df_v_proj_PCA.query(querystr))
-
             p1.scatter(
                 x="raw_PC_1",
                 y="raw_PC_2",
@@ -349,12 +372,12 @@ class RawSpikeAnalysis:
 
         # Plot voltage and dV/dt traces
         for i in range(n_clusters):
-            mask = clusters == i
+            query_str = f"PCA_cluster_id == @i"
             group_label = f"Cluster {i+1}"
-
             if not if_show_cluster_on_retro:
-                mask = mask & (df_v_proj_PCA["injection region"] == "Non-Retro")
-                group_label = f"Cluster {i+1} (Non-Retro)"
+                query_str += " and `injection region` == 'Non-Retro'"
+                group_label += " (Non-Retro)"
+            ephys_roi_ids = df_v_proj_PCA.query(query_str).ephys_roi_id.tolist()
             
             # Common line properties
             line_props = {
@@ -367,22 +390,36 @@ class RawSpikeAnalysis:
                 'selection_line_width': 4,
             }
             # Plot voltage traces
+            df_this = df_v_norm.query("ephys_roi_id in @ephys_roi_ids")
+            source = ColumnDataSource({
+                "xs": [df_v_norm.columns.values] * len(df_this),
+                "ys": df_this.values.tolist(),
+                "ephys_roi_id": ephys_roi_ids,
+            })
             p2.multi_line(
-                xs=[df_v_norm.columns.values] * sum(mask),
-                ys=df_v_norm.values[mask].tolist(),
+                source=source,
+                xs="xs",
+                ys="ys",
                 color=cluster_colors[i],
                 **line_props,
                 legend_label=group_label,
             )
             
             # Plot dV/dt traces
+            df_this = df_dvdt_norm.query("ephys_roi_id in @ephys_roi_ids")
+            source = ColumnDataSource({
+                "xs": [df_dvdt_norm.columns.values] * len(df_this),
+                "ys": df_this.values.tolist(),
+                "ephys_roi_id": ephys_roi_ids,
+            })
             p3.multi_line(
-                xs=[df_dvdt_norm.columns.values] * sum(mask),
-                ys=df_dvdt_norm.values[mask].tolist(),
+                source=source,
+                xs="xs",
+                ys="ys",
                 color=cluster_colors[i],
                 **line_props,
                 legend_label=group_label,
-            )        
+            )
             
             
         # Add region cluster_colors to the all plots
@@ -390,9 +427,11 @@ class RawSpikeAnalysis:
             if region == "Non-Retro":
                 continue
             roi_ids = self.df_meta.query("`injection region` == @region").ephys_roi_id.tolist()
+            source = ColumnDataSource(df_v_proj_PCA.query("ephys_roi_id in @roi_ids"))
             p1.scatter(
-                df_v_proj_PCA.query("ephys_roi_id in @roi_ids").loc[:, "raw_PC_1"],
-                df_v_proj_PCA.query("ephys_roi_id in @roi_ids").loc[:, "raw_PC_2"],
+                x="raw_PC_1",
+                y="raw_PC_2",
+                source=source,
                 color=REGION_COLOR_MAPPER[region],
                 alpha=0.8,
                 size=marker_size,
@@ -416,6 +455,21 @@ class RawSpikeAnalysis:
                 legend_label=region,
             )
         
+        # Add tooltips
+        tooltips = self.create_tooltips()
+        hovertool = HoverTool(
+            tooltips=tooltips,
+        )
+        p1.add_tools(hovertool)
+        
+        hovertool = HoverTool(
+            tooltips=[("ephys_roi_id", "@ephys_roi_id")],
+            attachment="right",  # Fix tooltip to the right of the plot
+        )
+        p2.add_tools(hovertool)
+        p3.add_tools(hovertool)
+        
+
         for p in [p1, p2, p3]:
             p.legend.nrows = 2
             p.legend.background_fill_alpha = 0.5
@@ -427,7 +481,6 @@ class RawSpikeAnalysis:
         # Create grid layout with independent axes
         layout = gridplot([[p2, p1, p3]], toolbar_location="right", merge_tools=False)
         return layout
-    
     
     
 def add_counter(p, x, y, z, levels=5, line_color="blue", alpha=0.5, line_width=2):
