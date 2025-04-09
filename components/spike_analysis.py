@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import panel as pn
 from bokeh.layouts import gridplot
-from bokeh.models import Span, BoxZoomTool, HoverTool, TapTool, ColumnDataSource
+from bokeh.models import Span, BoxZoomTool, WheelZoomTool, ColumnDataSource
 from bokeh.plotting import figure
 from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
@@ -15,7 +15,7 @@ from scipy.stats import multivariate_normal
 from scipy.signal import savgol_filter
 
 from LCNE_patchseq_analysis.pipeline_util.s3 import get_public_representative_spikes
-
+from LCNE_patchseq_analysis import REGION_COLOR_MAPPER
 class RawSpikeAnalysis:
     """Handles spike waveform analysis and visualization."""
 
@@ -131,8 +131,21 @@ class RawSpikeAnalysis:
                 step=1,
                 width=width,
             ),
+            "if_show_cluster_on_retro": pn.widgets.Checkbox(
+                name="Show type color for Retro",
+                value=False,
+                width=width,
+            ),
+            "marker_size": pn.widgets.IntSlider(
+                name="Marker Size",
+                start=5,
+                end=20,
+                value=13,
+                step=1,
+                width=width,
+            ),
             "alpha_slider": pn.widgets.FloatSlider(
-                name="Trace Alpha",
+                name="Alpha",
                 start=0.1,
                 end=1.0,
                 value=0.3,
@@ -193,11 +206,17 @@ class RawSpikeAnalysis:
         }
 
         # Save data
-        df_v_proj_PCA = pd.DataFrame(v_pca, index=df_v_norm.index)
+        n_pcs = 5
+        df_v_proj_PCA = pd.DataFrame(v_pca[:, :n_pcs], index=df_v_norm.index,
+                                     columns=[f"raw_PC_{i}" for i in range(1, n_pcs + 1)])
         
         # Add cluster information to df_v_norm
         clusters_df = pd.DataFrame(clusters, index=df_v_norm.index, columns=["PCA_cluster_id"])
         # self.df_meta = self.df_meta.merge(clusters_df, on="ephys_roi_id", how="left")
+        df_v_proj_PCA = df_v_proj_PCA.merge(clusters_df, on="ephys_roi_id", how="left")
+        df_v_proj_PCA = df_v_proj_PCA.merge(self.df_meta[["ephys_roi_id", "injection region"]], 
+                                            on="ephys_roi_id", 
+                                            how="left")
 
         return df_v_proj_PCA, clusters, pca, metrics
 
@@ -210,6 +229,8 @@ class RawSpikeAnalysis:
         width: int = 400,
         height: int = 400,
         font_size: int = 12,
+        marker_size: int = 10,
+        if_show_cluster_on_retro: bool = True,
     ) -> gridplot:
         """Create plots for spike analysis including PCA and clustering."""
         # Perform PCA and clustering
@@ -226,7 +247,7 @@ class RawSpikeAnalysis:
         p1 = figure(
             x_axis_label="PC1",
             y_axis_label="PC2",
-            tools="pan,reset,hover,tap",
+            tools="pan,reset,hover,tap,wheel_zoom",
             **plot_settings
         )
         p2 = figure(
@@ -261,47 +282,59 @@ class RawSpikeAnalysis:
             if p.legend:
                 p.legend.label_text_font_size = "12pt"
 
-
-        # Plot PCA scatter with contours
+        # -- Plot PCA scatter with contours --
         # Create a single ColumnDataSource for all clusters
-        source_data = {
-            'x': df_v_proj_PCA.iloc[:, 0],
-            'y': df_v_proj_PCA.iloc[:, 1],
-            'color': [colors[i] for i in clusters],
-            'alpha': [0.7] * len(clusters)
-        }
-        source = ColumnDataSource(data=source_data)
+        df_v_proj_PCA["color"] = [colors[i] for i in df_v_proj_PCA["PCA_cluster_id"]]
+        # If injection region is not "Non-Retro", set color to None
+        if not if_show_cluster_on_retro:
+            df_v_proj_PCA.loc[df_v_proj_PCA["injection region"] != "Non-Retro", "color"] = None
+        source = ColumnDataSource(df_v_proj_PCA)
         
-        # Create a single scatter plot for all points
         p1.scatter(
-            x='x',
-            y='y',
+            x="raw_PC_1",
+            y="raw_PC_2",
             source=source,
-            size=10,
+            size=marker_size,
             color='color',
-            alpha='alpha',
+            alpha=alpha,
             # legend_label=[f"Cluster {i+1}" for i in range(n_clusters)],
             hover_color="blue",
             selection_color="blue",
         )
 
-        for i in range(n_clusters):
-            mask = clusters == i
+        for i in df_v_proj_PCA["PCA_cluster_id"].unique():
+            values = df_v_proj_PCA.query("PCA_cluster_id == @i").loc[:, ["raw_PC_1", "raw_PC_2"]].values
+            
             # Add contours
-            mean = np.mean(df_v_proj_PCA.values[mask, :2], axis=0)
-            cov = np.cov(df_v_proj_PCA.values[mask, :2].T)
+            mean = np.mean(values, axis=0)
+            cov = np.cov(values.T)
             x, y = np.mgrid[
-                df_v_proj_PCA.values[:, 0].min():df_v_proj_PCA.values[:, 0].max():100j,
-                df_v_proj_PCA.values[:, 1].min():df_v_proj_PCA.values[:, 1].max():100j,
+                values[:, 0].min():values[:, 0].max():100j,
+                values[:, 1].min():values[:, 1].max():100j,
             ]
             pos = np.dstack((x, y))
             rv = multivariate_normal(mean, cov)
             z = rv.pdf(pos)
             add_counter(p1, x, y, z, levels=3, line_color=colors[i], alpha=1)
             
+        # Add region colors to the all plots
+        for region in self.df_meta["injection region"].unique():
+            if region == "Non-Retro":
+                continue            
+            p1.scatter(
+                df_v_proj_PCA.query("`injection region` == @region").loc[:, "raw_PC_1"],
+                df_v_proj_PCA.query("`injection region` == @region").loc[:, "raw_PC_2"],
+                color=REGION_COLOR_MAPPER[region],
+                alpha=1,
+                size=marker_size,
+                legend_label=region,
+            )
+          
         # Add metrics to the plot
         p1.title.text = f"PCA on raw + K-means Clustering (n_clusters = {n_clusters})\n" \
                         f"Silhouette Score: {metrics['silhouette_avg']:.3f}\n"
+        p1.legend.click_policy = "hide"
+        p1.toolbar.active_scroll = p1.select_one(WheelZoomTool)
             
         # Add vertical lines for normalization windows
         p2.add_layout(Span(
@@ -356,6 +389,7 @@ class RawSpikeAnalysis:
                 selection_line_alpha=1.0,
                 selection_line_width=4,
             )
+          
         
         # Create grid layout with independent axes
         layout = gridplot([[p2, p1, p3]], toolbar_location="right", merge_tools=False)

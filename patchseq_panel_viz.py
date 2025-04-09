@@ -467,7 +467,9 @@ class PatchSeqNWBApp(param.Parameterized):
         # Create spike analysis controls and plots
         spike_controls = self.raw_spike_analysis.create_plot_controls()
 
-        def update_spike_plots(extract_from, n_clusters, alpha, width, height, normalize_window_v, normalize_window_dvdt):
+        def update_spike_plots(extract_from, n_clusters, alpha, width, height, 
+                               marker_size, normalize_window_v, normalize_window_dvdt, 
+                               if_show_cluster_on_retro):
             # Extract representative spikes
             df_v_norm, df_dvdt_norm = self.raw_spike_analysis.extract_representative_spikes(
                 extract_from=extract_from,
@@ -486,16 +488,19 @@ class PatchSeqNWBApp(param.Parameterized):
                 alpha=alpha,
                 width=width,
                 height=height,
+                marker_size=marker_size,
+                if_show_cluster_on_retro=if_show_cluster_on_retro,
             )
         
         # Create spike analysis plots
         controls = spike_controls  # shorter name for readability
         param_keys = [
-            "n_clusters", "alpha_slider", "plot_width",
-            "plot_height", "normalize_window_v", "normalize_window_dvdt"
+            "n_clusters", "alpha_slider", "plot_width", "if_show_cluster_on_retro",
+            "plot_height", "marker_size", "normalize_window_v", "normalize_window_dvdt"
         ]
         params = {
             k: controls[k].param.value_throttled
+            if k != "if_show_cluster_on_retro" else controls[k].param.value
             for k in param_keys
         }
         
@@ -506,6 +511,8 @@ class PatchSeqNWBApp(param.Parameterized):
             alpha=params["alpha_slider"],
             width=params["plot_width"],
             height=params["plot_height"],
+            marker_size=params["marker_size"],
+            if_show_cluster_on_retro=params["if_show_cluster_on_retro"],
             normalize_window_v=params["normalize_window_v"],
             normalize_window_dvdt=params["normalize_window_dvdt"]
         )
@@ -534,6 +541,13 @@ class PatchSeqNWBApp(param.Parameterized):
         layout = pn.Column(
             pn.pane.Markdown("# Patch-seq Ephys Data Explorer\n"),
             pn.Column(
+                pn.pane.Markdown(f"## Extracted Features (N = {len(self.df_meta)})"),
+            ),
+            pane_cell_selector,
+            pn.layout.Divider(),
+            show_sweeps_button,
+            dynamic_content,
+            pn.Column(
                 pn.pane.Markdown("## Raw Spikes"),
                 pn.Row(
                     pn.Column(*spike_controls.values()),
@@ -541,14 +555,6 @@ class PatchSeqNWBApp(param.Parameterized):
                 ),
             ),
             pn.layout.Divider(),            
-            pn.Column(
-                pn.pane.Markdown(f"## Extracted Features (N = {len(self.df_meta)})"),
-            ),
-            pane_cell_selector,
-            pn.layout.Divider(),
-
-            show_sweeps_button,
-            dynamic_content,
             margin=(20, 20, 0, 20),  # top, right, bottom, left margins in pixels
         )
         return layout
