@@ -15,6 +15,7 @@ from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_har
 from sklearn.cluster import KMeans
 from scipy.stats import multivariate_normal
 from scipy.signal import savgol_filter
+from umap import UMAP
 
 from LCNE_patchseq_analysis.pipeline_util.s3 import get_public_representative_spikes
 from LCNE_patchseq_analysis import REGION_COLOR_MAPPER
@@ -110,6 +111,12 @@ class RawSpikeAnalysis:
                 value="long_square_rheo, min",
                 sizing_mode="stretch_width",
             ),
+            "dim_reduction_method": pn.widgets.Select(
+                name="Dimensionality Reduction Method",
+                options=["PCA", "UMAP"],
+                value="PCA",
+                sizing_mode="stretch_width",
+            ),
             "spike_range": pn.widgets.RangeSlider(
                 name="Spike Analysis Range (ms)",
                 start=-5,
@@ -190,51 +197,61 @@ class RawSpikeAnalysis:
         }
         return controls
 
-    def perform_PCA_clustering(self, df_v_norm: pd.DataFrame, n_clusters: int = 2):
+    def perform_dim_reduction_clustering(self, df_v_norm: pd.DataFrame, n_clusters: int = 2, method: str = "PCA"):
         """
-        Perform PCA and K-means clustering on the voltage traces.
+        Perform dimensionality reduction and K-means clustering on the voltage traces.
         
         Parameters:
             df_v_norm : pd.DataFrame
                 Normalized voltage traces
             n_clusters : int
                 Number of clusters for K-means
-        
+            method : str
+                Dimensionality reduction method ("PCA" or "UMAP")
         """
-        # Perform PCA
-        pca = PCA()
         v = df_v_norm.values
-        v_pca = pca.fit_transform(v)
+        
+        if method == "PCA":
+            # Perform PCA
+            reducer = PCA()
+            v_proj = reducer.fit_transform(v)
+            n_components = 5
+            columns = [f"PCA{i}" for i in range(1, n_components + 1)]
+        else:  # UMAP
+            # Perform UMAP
+            reducer = UMAP(n_components=2, random_state=42)
+            v_proj = reducer.fit_transform(v)
+            n_components = 2
+            columns = [f"UMAP{i}" for i in range(1, n_components + 1)]
 
         # K-means clustering
         kmeans = KMeans(n_clusters=n_clusters, random_state=42)
-        clusters = kmeans.fit_predict(v_pca[:, :2])
+        clusters = kmeans.fit_predict(v_proj[:, :2])
         
         # Calculate metrics
-        silhouette_avg = silhouette_score(v_pca[:, :2], clusters)
+        silhouette_avg = silhouette_score(v_proj[:, :2], clusters)
         metrics = {
             "silhouette_avg": silhouette_avg,
         }
 
         # Save data
-        n_pcs = 5
-        df_v_proj_PCA = pd.DataFrame(v_pca[:, :n_pcs], index=df_v_norm.index,
-                                     columns=[f"raw_PC_{i}" for i in range(1, n_pcs + 1)])
+        df_v_proj = pd.DataFrame(v_proj[:, :n_components], index=df_v_norm.index,
+                                columns=columns)
         
         # Add cluster information to df_v_norm
-        clusters_df = pd.DataFrame(clusters, index=df_v_norm.index, columns=["PCA_cluster_id"])
+        clusters_df = pd.DataFrame(clusters, index=df_v_norm.index, columns=["cluster_id"])
         self.df_meta = self.df_meta[
-            [col for col in self.df_meta.columns if col != "PCA_cluster_id"]].merge(
+            [col for col in self.df_meta.columns if col != "cluster_id"]].merge(
                 clusters_df, on="ephys_roi_id", how="left")
-        df_v_proj_PCA = df_v_proj_PCA.merge(clusters_df, on="ephys_roi_id", how="left")
-        df_v_proj_PCA = df_v_proj_PCA.merge(self.df_meta[
+        df_v_proj = df_v_proj.merge(clusters_df, on="ephys_roi_id", how="left")
+        df_v_proj = df_v_proj.merge(self.df_meta[
             ["Date_str", "ephys_roi_id", "injection region", "cell_summary_url", "jem-id_cell_specimen"]],
             on="ephys_roi_id",
             how="left"
             )
 
-        return df_v_proj_PCA, clusters, pca, metrics
-    
+        return df_v_proj, clusters, reducer, metrics
+
     def create_tooltips(
         self,
     ):
@@ -275,14 +292,16 @@ class RawSpikeAnalysis:
         marker_size: int = 10,
         if_show_cluster_on_retro: bool = True,
         spike_range: tuple = (-4, 7),
+        dim_reduction_method: str = "PCA",
     ) -> gridplot:
-        """Create plots for spike analysis including PCA and clustering."""
+        """Create plots for spike analysis including dimensionality reduction and clustering."""
         # Filter data based on spike_range
         df_v_norm = df_v_norm.loc[:, (df_v_norm.columns >= spike_range[0]) & (df_v_norm.columns <= spike_range[1])]
         df_dvdt_norm = df_dvdt_norm.loc[:, (df_dvdt_norm.columns >= spike_range[0]) & (df_dvdt_norm.columns <= spike_range[1])]
 
-        # Perform PCA and clustering
-        df_v_proj_PCA, clusters, pca, metrics = self.perform_PCA_clustering(df_v_norm, n_clusters)      
+        # Perform dimensionality reduction and clustering
+        df_v_proj, clusters, reducer, metrics = self.perform_dim_reduction_clustering(
+            df_v_norm, n_clusters, dim_reduction_method)      
         cluster_colors = ["black", "darkgray", "darkblue", "cyan", "darkorange"][:n_clusters]
 
         # Common plot settings
@@ -293,8 +312,8 @@ class RawSpikeAnalysis:
 
         # Create figures
         p1 = figure(
-            x_axis_label="PC1",
-            y_axis_label="PC2",
+            x_axis_label=f"{dim_reduction_method}1",
+            y_axis_label=f"{dim_reduction_method}2",
             tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
             **plot_settings
         )
@@ -335,18 +354,18 @@ class RawSpikeAnalysis:
         # If injection region is not "Non-Retro", set color to None
         scatter_list_p1 = []
         
-        for i in df_v_proj_PCA["PCA_cluster_id"].unique():
+        for i in df_v_proj["cluster_id"].unique():
             # Add dots
-            querystr = "PCA_cluster_id == @i"
+            querystr = "cluster_id == @i"
             group_label = f"Cluster {i+1}"
             if not if_show_cluster_on_retro:
                 querystr += " and `injection region` == 'Non-Retro'"
                 group_label += " (Non-Retro)"
                 
-            source = ColumnDataSource(df_v_proj_PCA.query(querystr))
+            source = ColumnDataSource(df_v_proj.query(querystr))
             scatter_list_p1.append(p1.scatter(
-                x="raw_PC_1",
-                y="raw_PC_2",
+                x=f"{dim_reduction_method}1",
+                y=f"{dim_reduction_method}2",
                 source=source,
                 size=marker_size,
                 color=cluster_colors[i],
@@ -361,12 +380,12 @@ class RawSpikeAnalysis:
                                       partial(self.update_ephys_roi_id, source.data))         
             
             # Add contours
-            values = df_v_proj_PCA.query("PCA_cluster_id == @i").loc[:, ["raw_PC_1", "raw_PC_2"]].values
+            values = df_v_proj.query("cluster_id == @i").loc[:, [f"{dim_reduction_method}1", f"{dim_reduction_method}2"]].values
             mean = np.mean(values, axis=0)
             cov = np.cov(values.T)
             x, y = np.mgrid[
-                values[:, 0].min():values[:, 0].max():100j,
-                values[:, 1].min():values[:, 1].max():100j,
+                values[:, 0].min() - 0.5:values[:, 0].max() + 0.5:100j,
+                values[:, 1].min() - 0.5:values[:, 1].max() + 0.5:100j,
             ]
             pos = np.dstack((x, y))
             rv = multivariate_normal(mean, cov)
@@ -374,7 +393,7 @@ class RawSpikeAnalysis:
             add_counter(p1, x, y, z, levels=3, line_color=cluster_colors[i], alpha=1)
           
         # Add metrics to the plot
-        p1.title.text = f"PCA on raw + K-means Clustering (n_clusters = {n_clusters})\n" \
+        p1.title.text = f"{dim_reduction_method} + K-means Clustering (n_clusters = {n_clusters})\n" \
                         f"Silhouette Score: {metrics['silhouette_avg']:.3f}\n"
         p1.toolbar.active_scroll = p1.select_one(WheelZoomTool)
             
@@ -402,12 +421,12 @@ class RawSpikeAnalysis:
 
         # Plot voltage and dV/dt traces
         for i in range(n_clusters):
-            query_str = f"PCA_cluster_id == @i"
+            query_str = f"cluster_id == @i"
             group_label = f"Cluster {i+1}"
             if not if_show_cluster_on_retro:
                 query_str += " and `injection region` == 'Non-Retro'"
                 group_label += " (Non-Retro)"
-            ephys_roi_ids = df_v_proj_PCA.query(query_str).ephys_roi_id.tolist()
+            ephys_roi_ids = df_v_proj.query(query_str).ephys_roi_id.tolist()
             
             # Common line properties
             line_props = {
@@ -458,10 +477,10 @@ class RawSpikeAnalysis:
             if region == "Non-Retro":
                 continue
             roi_ids = self.df_meta.query("`injection region` == @region").ephys_roi_id.tolist()
-            source = ColumnDataSource(df_v_proj_PCA.query("ephys_roi_id in @roi_ids"))
+            source = ColumnDataSource(df_v_proj.query("ephys_roi_id in @roi_ids"))
             scatter_list_p1.append(p1.scatter(
-                x="raw_PC_1",
-                y="raw_PC_2",
+                x=f"{dim_reduction_method}1",
+                y=f"{dim_reduction_method}2",
                 source=source,
                 color=REGION_COLOR_MAPPER[region],
                 alpha=0.8,

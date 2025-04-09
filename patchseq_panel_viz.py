@@ -469,7 +469,7 @@ class PatchSeqNWBApp(param.Parameterized):
 
         def update_spike_plots(extract_from, n_clusters, alpha, width, height, 
                                marker_size, normalize_window_v, normalize_window_dvdt, 
-                               if_show_cluster_on_retro, spike_range):
+                               if_show_cluster_on_retro, spike_range, dim_reduction_method):
             # Extract representative spikes
             df_v_norm, df_dvdt_norm = self.raw_spike_analysis.extract_representative_spikes(
                 extract_from=extract_from,
@@ -491,6 +491,7 @@ class PatchSeqNWBApp(param.Parameterized):
                 marker_size=marker_size,
                 if_show_cluster_on_retro=if_show_cluster_on_retro,
                 spike_range=spike_range,
+                dim_reduction_method=dim_reduction_method,
             )
         
         # Create spike analysis plots
@@ -498,11 +499,12 @@ class PatchSeqNWBApp(param.Parameterized):
         param_keys = [
             "n_clusters", "alpha_slider", "plot_width", "if_show_cluster_on_retro",
             "plot_height", "marker_size", "normalize_window_v", "normalize_window_dvdt",
-            "spike_range"
+            "spike_range", "dim_reduction_method"
         ]
         params = {
             k: controls[k].param.value_throttled
-            if k != "if_show_cluster_on_retro" else controls[k].param.value
+            if k not in ["if_show_cluster_on_retro", "dim_reduction_method"]
+            else controls[k].param.value
             for k in param_keys
         }
         
@@ -518,6 +520,7 @@ class PatchSeqNWBApp(param.Parameterized):
             normalize_window_v=params["normalize_window_v"],
             normalize_window_dvdt=params["normalize_window_dvdt"],
             spike_range=params["spike_range"],
+            dim_reduction_method=params["dim_reduction_method"],
         )
 
         # Bind the sweep panel to the current cell selection.
