@@ -5,6 +5,8 @@ Spike analysis component for the visualization app.
 import numpy as np
 import pandas as pd
 import panel as pn
+from functools import partial
+
 from bokeh.layouts import gridplot
 from bokeh.models import Span, BoxZoomTool, WheelZoomTool, ColumnDataSource, HoverTool
 from bokeh.plotting import figure
@@ -19,8 +21,9 @@ from LCNE_patchseq_analysis import REGION_COLOR_MAPPER
 class RawSpikeAnalysis:
     """Handles spike waveform analysis and visualization."""
 
-    def __init__(self, df_meta: pd.DataFrame):
+    def __init__(self, df_meta: pd.DataFrame, main_app):
         """Initialize with metadata dataframe."""
+        self.main_app = main_app
         self.df_meta = df_meta
                 
         # Load extracted raw spike data
@@ -242,6 +245,15 @@ class RawSpikeAnalysis:
              """
 
         return tooltips
+    
+    # Add callback to update ephys_roi_id on point tap
+    def update_ephys_roi_id(self, df, attr, old, new):
+        if new:
+            selected_index = new[0]
+            ephys_roi_id = str(int(df["ephys_roi_id"][selected_index]))
+            # Update the data holder's ephys_roi_id
+            if hasattr(self.main_app, "data_holder"):
+                self.main_app.data_holder.ephys_roi_id_selected = ephys_roi_id
 
     def create_raw_PCA_plots(
         self,
@@ -328,7 +340,11 @@ class RawSpikeAnalysis:
                 legend_label=group_label,
                 hover_color="blue",
                 selection_color="blue",
-            )        
+            )
+                        
+            # Attach the callback to the selection changes
+            source.selected.on_change("indices", 
+                                      partial(self.update_ephys_roi_id, source.data))
             
             # Add contours
             values = df_v_proj_PCA.query("PCA_cluster_id == @i").loc[:, ["raw_PC_1", "raw_PC_2"]].values
@@ -396,6 +412,7 @@ class RawSpikeAnalysis:
                 "ys": df_this.values.tolist(),
                 "ephys_roi_id": ephys_roi_ids,
             })
+
             p2.multi_line(
                 source=source,
                 xs="xs",
@@ -437,6 +454,10 @@ class RawSpikeAnalysis:
                 size=marker_size,
                 legend_label=region,
             )
+                        
+            # Attach the callback to the selection changes
+            source.selected.on_change("indices", 
+                                      partial(self.update_ephys_roi_id, source.data))
             
             ys = df_v_norm.query("ephys_roi_id in @roi_ids").values
             p2.multi_line(
@@ -469,7 +490,6 @@ class RawSpikeAnalysis:
         p2.add_tools(hovertool)
         p3.add_tools(hovertool)
         
-
         for p in [p1, p2, p3]:
             p.legend.nrows = 2
             p.legend.background_fill_alpha = 0.5

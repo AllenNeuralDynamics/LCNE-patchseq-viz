@@ -427,7 +427,7 @@ class ScatterPlot:
                 logger.info(f"Selected ephys_roi_id: {ephys_roi_id}")
                 # Update the data holder's ephys_roi_id
                 if hasattr(self, "data_holder"):
-                    self.data_holder.ephys_roi_id = ephys_roi_id
+                    self.data_holder.ephys_roi_id_selected = ephys_roi_id
 
         # Attach the callback to the selection changes
         source.selected.on_change("indices", update_ephys_roi_id)

@@ -45,7 +45,7 @@ class PatchSeqNWBApp(param.Parameterized):
         Holder for currently selected cell ID and sweep number.
         """
 
-        ephys_roi_id = param.String(default="")
+        ephys_roi_id_selected = param.String(default="")
         sweep_number_selected = param.Integer(default=0)
 
     def __init__(self):
@@ -83,7 +83,7 @@ class PatchSeqNWBApp(param.Parameterized):
         self.scatter_plot = ScatterPlot(self.df_meta, self.data_holder)
         
         # Initialize spike analysis component
-        self.raw_spike_analysis = RawSpikeAnalysis(self.df_meta)
+        self.raw_spike_analysis = RawSpikeAnalysis(self.df_meta, main_app=self)
 
         # Create the cell selector panel once.
         self.cell_selector_panel = self.create_cell_selector_panel()
@@ -270,7 +270,7 @@ class PatchSeqNWBApp(param.Parameterized):
         def update_sweep_view_from_table(event):
             if event.new:
                 selected_index = event.new[0]
-                self.data_holder.ephys_roi_id = str(
+                self.data_holder.ephys_roi_id_selected = str(
                     int(self.df_meta.iloc[selected_index]["ephys_roi_id"])
                 )
 
@@ -293,9 +293,9 @@ class PatchSeqNWBApp(param.Parameterized):
                 lambda ephys_roi_id: pn.pane.Markdown(
                     "## Cell summary plot" + (f" for {ephys_roi_id}" if ephys_roi_id else "")
                 ),
-                ephys_roi_id=self.data_holder.param.ephys_roi_id,
+                ephys_roi_id=self.data_holder.param.ephys_roi_id_selected,
             ),
-            pn.bind(get_s3_cell_summary_plot, ephys_roi_id=self.data_holder.param.ephys_roi_id),
+            pn.bind(get_s3_cell_summary_plot, ephys_roi_id=self.data_holder.param.ephys_roi_id_selected),
             sizing_mode="stretch_width",
         )
 
@@ -519,7 +519,7 @@ class PatchSeqNWBApp(param.Parameterized):
 
         # Bind the sweep panel to the current cell selection.
         pane_one_cell = pn.bind(
-            self.create_sweep_panel, ephys_roi_id=self.data_holder.param.ephys_roi_id
+            self.create_sweep_panel, ephys_roi_id=self.data_holder.param.ephys_roi_id_selected
         )
 
         # Create a toggle button for showing/hiding raw sweeps
