@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import panel as pn
 from bokeh.layouts import gridplot
-from bokeh.models import Span, BoxZoomTool
+from bokeh.models import Span, BoxZoomTool, HoverTool, TapTool
 from bokeh.plotting import figure
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
@@ -194,6 +194,7 @@ class RawSpikeAnalysis:
             title="PCA Clustering",
             x_axis_label="PC1",
             y_axis_label="PC2",
+            tools="pan,reset,hover,tap",
             **plot_settings
         )
         p2 = figure(
@@ -201,6 +202,7 @@ class RawSpikeAnalysis:
             x_axis_label="Time (ms)",
             y_axis_label="Voltage",
             x_range=(-4.1, 7.1),
+            tools="pan,reset,hover,tap",
             **plot_settings
         )
         p3 = figure(
@@ -208,6 +210,7 @@ class RawSpikeAnalysis:
             x_axis_label="Time (ms)",
             y_axis_label="dV/dt",
             x_range=(-3.1, 6.1),
+            tools="pan,reset,hover,tap",
             **plot_settings
         )
 
@@ -318,25 +321,6 @@ def add_counter(p, x, y, z, levels=5, line_color="blue", alpha=0.5, line_width=2
             The transparency level of the contour lines (default is 0.5).
         line_width : int, optional
             The width of the contour lines (default is 2).
-
-    Example usage:
-        # Generate grid data
-        import numpy as np
-        x_vals = np.linspace(-3, 3, 100)
-        y_vals = np.linspace(-3, 3, 100)
-        x, y = np.meshgrid(x_vals, y_vals)
-        z = np.sin(x**2 + y**2)
-        
-        # Prepare a Bokeh plot (make sure to import necessary modules)
-        from bokeh.plotting import figure, show, output_notebook
-        output_notebook()
-        p = figure(title="Contour Plot", width=500, height=500)
-        
-        # Add contours using the helper function
-        add_counter(p, x, y, z, levels=5, line_color="red", alpha=0.7)
-        
-        # Show the figure
-        show(p)
     """
     import matplotlib.pyplot as plt
 
@@ -357,5 +341,18 @@ def add_counter(p, x, y, z, levels=5, line_color="blue", alpha=0.5, line_width=2
             alphas.append(level_alpha)
 
     # Plot the extracted contour lines on the Bokeh figure with varying alpha
-    p.multi_line(xs=xs_list, ys=ys_list, line_color=line_color,
-                 line_alpha=alphas, line_width=line_width)
+    renderer = p.multi_line(
+        xs=xs_list, 
+        ys=ys_list, 
+        line_color=line_color,
+        line_alpha=alphas, 
+        line_width=line_width,
+        name="contour_lines",  # Add a name for easier reference
+        level="underlay"  # Place contour lines under other glyphs
+    )
+    
+    # Make contour lines non-interactive
+    renderer.nonselection_glyph = None  # Disable selection
+    renderer.selection_glyph = None  # Disable selection
+    renderer.hover_glyph = None  # Disable hover
+    renderer.propagate_hover = False  # Prevent hover events from propagating
