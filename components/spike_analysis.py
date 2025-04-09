@@ -191,14 +191,14 @@ class RawSpikeAnalysis:
 
         # Create figures
         p1 = figure(
-            title="PCA Clustering",
+            title=f"PCA on raw + K-means Clustering (n_clusters = {n_clusters})",
             x_axis_label="PC1",
             y_axis_label="PC2",
             tools="pan,reset,hover,tap",
             **plot_settings
         )
         p2 = figure(
-            title="V",
+            title=f"Raw Vm, normalized between {self.normalize_window_v[0]} to {self.normalize_window_v[1]} ms",
             x_axis_label="Time (ms)",
             y_axis_label="Voltage",
             x_range=(-4.1, 7.1),
@@ -206,7 +206,7 @@ class RawSpikeAnalysis:
             **plot_settings
         )
         p3 = figure(
-            title="dV/dt",
+            title=f"dV/dt, normalized betwen {self.normalize_window_dvdt[0]} to {self.normalize_window_dvdt[1]} ms",
             x_axis_label="Time (ms)",
             y_axis_label="dV/dt",
             x_range=(-3.1, 6.1),
