@@ -362,6 +362,8 @@ class RawSpikeAnalysis:
                 querystr += " and `injection region` == 'Non-Retro'"
                 group_label += " (Non-Retro)"
                 
+            group_label += f", n={df_v_proj.query(querystr).shape[0]}"
+                
             source = ColumnDataSource(df_v_proj.query(querystr))
             scatter_list_p1.append(p1.scatter(
                 x=f"{dim_reduction_method}1",
@@ -426,6 +428,7 @@ class RawSpikeAnalysis:
             if not if_show_cluster_on_retro:
                 query_str += " and `injection region` == 'Non-Retro'"
                 group_label += " (Non-Retro)"
+            group_label += f", n={df_v_proj.query(query_str).shape[0]}"
             ephys_roi_ids = df_v_proj.query(query_str).ephys_roi_id.tolist()
             
             # Common line properties
@@ -477,6 +480,8 @@ class RawSpikeAnalysis:
             if region == "Non-Retro":
                 continue
             roi_ids = self.df_meta.query("`injection region` == @region").ephys_roi_id.tolist()
+            legend_label = f"{region}, n={len(roi_ids)}"
+            
             source = ColumnDataSource(df_v_proj.query("ephys_roi_id in @roi_ids"))
             scatter_list_p1.append(p1.scatter(
                 x=f"{dim_reduction_method}1",
@@ -485,7 +490,7 @@ class RawSpikeAnalysis:
                 color=REGION_COLOR_MAPPER[region],
                 alpha=0.8,
                 size=marker_size,
-                legend_label=region,
+                legend_label=legend_label,
             ))
                         
             # Attach the callback to the selection changes
@@ -498,7 +503,7 @@ class RawSpikeAnalysis:
                 ys=ys.tolist(),
                 color=REGION_COLOR_MAPPER[region],
                 alpha=0.8,
-                legend_label=region,
+                legend_label=legend_label,
             )
             ys = df_dvdt_norm.query("ephys_roi_id in @roi_ids").values
             p3.multi_line(
@@ -506,7 +511,7 @@ class RawSpikeAnalysis:
                 ys=ys.tolist(),
                 color=REGION_COLOR_MAPPER[region],
                 alpha=0.8,
-                legend_label=region,
+                legend_label=legend_label,
             )
         
         # Add tooltips
@@ -537,7 +542,7 @@ class RawSpikeAnalysis:
         
         
         # Create grid layout with independent axes
-        layout = gridplot([[p2, p1, p3]], toolbar_location="right", merge_tools=False)
+        layout = gridplot([[p1, p2, p3]], toolbar_location="right", merge_tools=False)
         return layout
     
     

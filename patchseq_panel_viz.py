@@ -546,6 +546,12 @@ class PatchSeqNWBApp(param.Parameterized):
 
         layout = pn.Column(
             pn.pane.Markdown("# Patch-seq Ephys Data Explorer\n"),
+
+            pn.Column(
+                pn.pane.Markdown(f"## Extracted Features (N = {len(self.df_meta)})"),
+            ),
+            pane_cell_selector,
+            pn.layout.Divider(),            
             pn.Column(
                 pn.pane.Markdown("## Raw Spikes"),
                 pn.Row(
@@ -553,11 +559,6 @@ class PatchSeqNWBApp(param.Parameterized):
                     spike_plots,
                 ),
             ),
-            pn.layout.Divider(),            
-            pn.Column(
-                pn.pane.Markdown(f"## Extracted Features (N = {len(self.df_meta)})"),
-            ),
-            pane_cell_selector,
             pn.layout.Divider(),
             show_sweeps_button,
             dynamic_content,
