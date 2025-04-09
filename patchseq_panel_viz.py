@@ -536,18 +536,19 @@ class PatchSeqNWBApp(param.Parameterized):
         layout = pn.Column(
             pn.pane.Markdown("# Patch-seq Ephys Data Explorer\n"),
             pn.Column(
-                pn.pane.Markdown(f"## Cell selector (N = {len(self.df_meta)})"),
-            ),
-            pane_cell_selector,
-            pn.layout.Divider(),
-            pn.Column(
-                pn.pane.Markdown("## Raw Spike Analysis"),
+                pn.pane.Markdown("## Raw Spikes"),
                 pn.Row(
                     pn.Column(*spike_controls.values()),
                     spike_plots,
                 ),
             ),
+            pn.layout.Divider(),            
+            pn.Column(
+                pn.pane.Markdown(f"## Extracted Features (N = {len(self.df_meta)})"),
+            ),
+            pane_cell_selector,
             pn.layout.Divider(),
+
             show_sweeps_button,
             dynamic_content,
             margin=(20, 20, 0, 20),  # top, right, bottom, left margins in pixels

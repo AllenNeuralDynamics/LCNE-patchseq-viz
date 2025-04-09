@@ -255,7 +255,7 @@ class RawSpikeAnalysis:
             pos = np.dstack((x, y))
             rv = multivariate_normal(mean, cov)
             z = rv.pdf(pos)
-            add_counter(p1, x, y, z, levels=5, line_color=colors[i], alpha=1)
+            add_counter(p1, x, y, z, levels=3, line_color=colors[i], alpha=1)
             
         # Add vertical lines for normalization windows
         p2.add_layout(Span(
