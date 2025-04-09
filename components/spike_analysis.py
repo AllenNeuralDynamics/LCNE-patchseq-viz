@@ -239,7 +239,7 @@ class RawSpikeAnalysis:
                         <b>@Date_str, @{injection region}, @{ephys_roi_id}, 
                             @{jem-id_cell_specimen}</b><br>
                     </span>
-                    <img src="@cell_summary_url" alt="Cell Summary" 
+                    <img src="@cell_summary_url{safe}" alt="Cell Summary" 
                          style="width: 800px; height: auto;">
              </div>
              """
@@ -320,7 +320,8 @@ class RawSpikeAnalysis:
         # -- Plot PCA scatter with contours --
         # Create a single ColumnDataSource for all clusters
         # If injection region is not "Non-Retro", set color to None
-                
+        scatter_list_p1 = []
+        
         for i in df_v_proj_PCA["PCA_cluster_id"].unique():
             # Add dots
             querystr = "PCA_cluster_id == @i"
@@ -330,7 +331,7 @@ class RawSpikeAnalysis:
                 group_label += " (Non-Retro)"
                 
             source = ColumnDataSource(df_v_proj_PCA.query(querystr))
-            p1.scatter(
+            scatter_list_p1.append(p1.scatter(
                 x="raw_PC_1",
                 y="raw_PC_2",
                 source=source,
@@ -340,11 +341,11 @@ class RawSpikeAnalysis:
                 legend_label=group_label,
                 hover_color="blue",
                 selection_color="blue",
-            )
+            ))
                         
             # Attach the callback to the selection changes
             source.selected.on_change("indices", 
-                                      partial(self.update_ephys_roi_id, source.data))
+                                      partial(self.update_ephys_roi_id, source.data))         
             
             # Add contours
             values = df_v_proj_PCA.query("PCA_cluster_id == @i").loc[:, ["raw_PC_1", "raw_PC_2"]].values
@@ -445,7 +446,7 @@ class RawSpikeAnalysis:
                 continue
             roi_ids = self.df_meta.query("`injection region` == @region").ephys_roi_id.tolist()
             source = ColumnDataSource(df_v_proj_PCA.query("ephys_roi_id in @roi_ids"))
-            p1.scatter(
+            scatter_list_p1.append(p1.scatter(
                 x="raw_PC_1",
                 y="raw_PC_2",
                 source=source,
@@ -453,12 +454,12 @@ class RawSpikeAnalysis:
                 alpha=0.8,
                 size=marker_size,
                 legend_label=region,
-            )
+            ))
                         
             # Attach the callback to the selection changes
             source.selected.on_change("indices", 
                                       partial(self.update_ephys_roi_id, source.data))
-            
+                        
             ys = df_v_norm.query("ephys_roi_id in @roi_ids").values
             p2.multi_line(
                 xs=[df_v_norm.query("ephys_roi_id in @roi_ids").columns.values] * ys.shape[0],
@@ -477,9 +478,14 @@ class RawSpikeAnalysis:
             )
         
         # Add tooltips
-        tooltips = self.create_tooltips()
+        # Add renderers like this to solve bug like this:
+        #   File "/Users/han.hou/miniconda3/envs/patch-seq/lib/python3.10/site-packages/panel/io/location.py", line 57, in _get_location_params
+        #     params['pathname'], search = uri.split('?')
+        # ValueError: too many values to unpack (expected 2)
+        # 2025-04-09 00:03:04,658 500 GET /patchseq_panel_viz??? (::1) 8541.01ms
         hovertool = HoverTool(
-            tooltips=tooltips,
+            tooltips=self.create_tooltips(),
+            renderers=scatter_list_p1,
         )
         p1.add_tools(hovertool)
         
@@ -491,7 +497,7 @@ class RawSpikeAnalysis:
         p3.add_tools(hovertool)
         
         for p in [p1, p2, p3]:
-            p.legend.nrows = 2
+            p.legend.ncols = 2
             p.legend.background_fill_alpha = 0.5
             p.legend.location = "bottom_center"
             p.legend.click_policy = "hide" 
