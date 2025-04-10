@@ -25,6 +25,7 @@ from LCNE_patchseq_analysis.panel_app.components.spike_analysis import RawSpikeA
 from LCNE_patchseq_analysis.pipeline_util.s3 import (
     get_public_url_cell_summary,
     get_public_url_sweep,
+    S3_PUBLIC_URL_BASE,
 )
 
 logging.basicConfig(level=logging.DEBUG)
@@ -562,6 +563,14 @@ class PatchSeqNWBApp(param.Parameterized):
             pn.layout.Divider(),
             show_sweeps_button,
             dynamic_content,
+            pn.layout.Divider(),
+            pn.Accordion(
+                (
+                    "Distribution of all features",
+                    pn.pane.PNG(S3_PUBLIC_URL_BASE + "/efel/cell_stats/distribution_all_features.png", 
+                                width=1300),
+                ),
+            ),
             margin=(20, 20, 0, 20),  # top, right, bottom, left margins in pixels
         )
         return layout
