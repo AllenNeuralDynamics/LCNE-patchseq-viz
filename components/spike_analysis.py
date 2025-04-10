@@ -497,13 +497,25 @@ class RawSpikeAnalysis:
             source.selected.on_change("indices", 
                                       partial(self.update_ephys_roi_id, source.data))
                         
+                        
             ys = df_v_norm.query("ephys_roi_id in @roi_ids").values
+            
+             # Common line properties
+            line_props = {
+                'hover_line_color': 'blue',
+                'hover_line_alpha': 1.0,
+                'hover_line_width': 4,
+                'selection_line_color': 'blue',
+                'selection_line_alpha': 1.0,
+                'selection_line_width': 4,
+            }
             p2.multi_line(
                 xs=[df_v_norm.query("ephys_roi_id in @roi_ids").columns.values] * ys.shape[0],
                 ys=ys.tolist(),
                 color=REGION_COLOR_MAPPER[region],
                 alpha=0.8,
                 legend_label=legend_label,
+                **line_props,
             )
             ys = df_dvdt_norm.query("ephys_roi_id in @roi_ids").values
             p3.multi_line(
@@ -512,6 +524,7 @@ class RawSpikeAnalysis:
                 color=REGION_COLOR_MAPPER[region],
                 alpha=0.8,
                 legend_label=legend_label,
+                **line_props,
             )
         
         # Add tooltips
