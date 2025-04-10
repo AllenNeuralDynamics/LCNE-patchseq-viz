@@ -12,6 +12,9 @@ from bokeh.layouts import gridplot
 from bokeh.models import BoxZoomTool, ColumnDataSource, DatetimeTickFormatter, HoverTool
 from bokeh.plotting import figure
 
+from sklearn.mixture import GaussianMixture
+from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
+
 from LCNE_patchseq_analysis.panel_app.components.color_mapping import ColorMapping
 from LCNE_patchseq_analysis.panel_app.components.size_mapping import SizeMapping
 from LCNE_patchseq_analysis.pipeline_util.s3 import get_public_url_cell_summary
@@ -180,7 +183,7 @@ class ScatterPlot:
                 name="Distribution plot height",
                 start=50,
                 end=300,
-                value=100,
+                value=150,
                 step=10,
                 sizing_mode="stretch_width",
             ),
@@ -308,13 +311,23 @@ class ScatterPlot:
 
         # Optional: Plot Gaussian Mixture Model overlay
         if show_gmm:
-            from sklearn.mixture import GaussianMixture
 
             gmm = GaussianMixture(n_components=n_components, random_state=42)
             gmm.fit(clean_data.values.reshape(-1, 1))
             domain = np.linspace(edges[0], edges[-1], 1000)
             density = np.exp(gmm.score_samples(domain.reshape(-1, 1)))
 
+            # Calculate evaluation metrics
+            if n_components > 1:
+                labels = gmm.predict(clean_data.values.reshape(-1, 1))
+                silhouette = silhouette_score(clean_data.values.reshape(-1, 1), labels)
+                
+                # Calculate BIC and AIC
+                bic = gmm.bic(clean_data.values.reshape(-1, 1))
+            else:
+                bic = np.nan
+                silhouette = np.nan
+            
             p.line(
                 *((domain, density) if orientation == "x" else (density, domain)),
                 line_color="black",
@@ -322,7 +335,7 @@ class ScatterPlot:
                 alpha=0.9,
             )
 
-            # Plot individual GMM components
+            # Plot individual components
             for i in range(n_components):
                 mean = gmm.means_[i][0]
                 std = np.sqrt(gmm.covariances_[i][0][0])
@@ -340,9 +353,21 @@ class ScatterPlot:
                     line_dash="dashed",
                 )
 
+            # Add metrics to the plot title
+            axis_to_show = p.xaxis if orientation == "x" else p.yaxis
+            
+            axis_to_show.axis_label = (
+                f"Silhouette: {silhouette:.3f}, "
+                f"BIC: {bic:.3f}"
+            )
+            
+            # Font size
+            axis_to_show.axis_label_text_font_size = "10pt"
+            axis_to_show.major_label_text_font_size = "0pt"
+
         # Hide axes and grid
-        p.xaxis.visible = False
-        p.yaxis.visible = False
+        axis_to_hide = p.xaxis if orientation == "y" else p.yaxis
+        axis_to_hide.visible = False
         p.grid.visible = False
         return p
 
