@@ -337,17 +337,17 @@ class RawSpikeAnalysis:
         # Update font sizes after figure creation
         for p in [p1, p2, p3]:
             # Set the font sizes for the title and axis labels
-            p.title.text_font_size = "14pt"
-            p.xaxis.axis_label_text_font_size = "14pt"
-            p.yaxis.axis_label_text_font_size = "14pt"
+            p.title.text_font_size = f"{font_size+2}pt"
+            p.xaxis.axis_label_text_font_size = f"{font_size+2}pt"
+            p.yaxis.axis_label_text_font_size = f"{font_size+2}pt"
 
             # Set the font sizes for the major tick labels on the axes
-            p.xaxis.major_label_text_font_size = "12pt"
-            p.yaxis.major_label_text_font_size = "12pt"
+            p.xaxis.major_label_text_font_size = f"{font_size}pt"
+            p.yaxis.major_label_text_font_size = f"{font_size}pt"
 
             # Set legend font size if legend exists
             if p.legend:
-                p.legend.label_text_font_size = "12pt"
+                p.legend.label_text_font_size = f"{font_size}pt"
 
         # -- Plot PCA scatter with contours --
         # Create a single ColumnDataSource for all clusters
