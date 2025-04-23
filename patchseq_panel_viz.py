@@ -67,6 +67,10 @@ class PatchSeqNWBApp(param.Parameterized):
             inplace=True,
         )
 
+        # Preprocess data: Convert NaN in "virus" column to "None"
+        if "virus" in self.df_meta.columns:
+            self.df_meta["virus"] = self.df_meta["virus"].fillna("None")
+
         self.cell_key = [
             "Date",
             "jem-id_cell_specimen",
