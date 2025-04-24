@@ -2,9 +2,10 @@
 Color mapping utilities for the scatter plot.
 """
 
-from typing import Any, Dict, Union
+from typing import Any, Dict, Union, List
 
 import pandas as pd
+import numpy as np
 from bokeh.models import CategoricalColorMapper, ColorBar, LinearColorMapper
 from bokeh.plotting import figure
 from bokeh.palettes import all_palettes
@@ -70,9 +71,53 @@ class ColorMapping:
 
         # If categorical (nunique <= 10), use categorical color mapper
         if self.df_meta[color_mapping].nunique() <= 10:
+            n_categories = self.df_meta[color_mapping].nunique()
+            
+            # Check if the provided color_palette is a string (name in all_palettes)
+            if isinstance(color_palette, str) and color_palette in all_palettes:
+                # Use the named palette from all_palettes
+                # Check if the number of categories is supported by the palette
+                max_colors = max(all_palettes[color_palette].keys())
+                n_colors = min(n_categories, max_colors)
+                categorical_palette = all_palettes[color_palette][n_colors]
+                # Make the palette circular by cycling through the colors
+                if n_categories > n_colors:
+                    categorical_palette = list(categorical_palette)
+                    categorical_palette = [
+                        categorical_palette[i % n_colors] for i in range(n_categories)
+                    ]
+            else:
+                # For continuous palette lists or palette names not in all_palettes
+                # First check if it's a named continuous palette like 'Viridis256'
+                named_palette = None
+                for name, palettes in all_palettes.items():
+                    if isinstance(color_palette, str) and color_palette.startswith(name):
+                        # If we found the palette, use it
+                        if 256 in palettes:
+                            named_palette = palettes[256]
+                        elif len(palettes) > 0:
+                            # Get the largest available palette
+                            max_key = max(palettes.keys())
+                            named_palette = palettes[max_key]
+                        break
+                
+                # Use the named continuous palette or the provided palette
+                if named_palette is not None:
+                    continuous_palette = named_palette
+                else:
+                    continuous_palette = color_palette
+                
+                # Uniformly sample from the continuous colormap
+                if isinstance(continuous_palette, (list, tuple)):
+                    indices = np.linspace(0, len(continuous_palette) - 1, n_categories).astype(int)
+                    categorical_palette = [continuous_palette[i] for i in indices]
+                else:
+                    # If we can't determine the palette type, use a default
+                    categorical_palette = all_palettes["Category10"][min(n_categories, 10)]
+            
             color_mapper = CategoricalColorMapper(
                 factors=list(self.df_meta[color_mapping].unique()),
-                palette=all_palettes[color_palette][self.df_meta[color_mapping].nunique()],
+                palette=categorical_palette,
             )
             self.add_color_bar(color_mapper, color_mapping, p)
             return {"field": color_mapping, "transform": color_mapper}
