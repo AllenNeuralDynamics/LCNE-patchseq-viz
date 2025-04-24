@@ -115,8 +115,18 @@ class ColorMapping:
                     # If we can't determine the palette type, use a default
                     categorical_palette = all_palettes["Category10"][min(n_categories, 10)]
             
+            # Map "None" or NaN factors to "gray"
+            factors = list(self.df_meta[color_mapping].unique())
+            categorical_palette = list(categorical_palette)
+            if "None" in factors:
+                idx = factors.index("None")
+                categorical_palette[idx] = "gray"
+            if np.nan in factors:
+                idx = factors.index(np.nan)
+                categorical_palette[idx] = "gray"
+
             color_mapper = CategoricalColorMapper(
-                factors=list(self.df_meta[color_mapping].unique()),
+                factors=factors,
                 palette=categorical_palette,
             )
             self.add_color_bar(color_mapper, color_mapping, p)
