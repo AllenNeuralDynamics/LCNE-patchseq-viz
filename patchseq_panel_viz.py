@@ -58,6 +58,9 @@ class PatchSeqNWBApp(param.Parameterized):
 
         # Load and prepare metadata.
         self.df_meta = load_ephys_metadata(if_from_s3=True, if_with_seq=True)
+        # Create a copy for filtering - this will be updated by the global filter
+        self.filtered_df_meta = self.df_meta.copy()
+        
         self.df_meta.rename(
             columns={
                 "x": "X (A --> P)",
@@ -162,6 +165,38 @@ class PatchSeqNWBApp(param.Parameterized):
                 f"({df_sweeps[df_sweeps.sweep_number == sweep].reasons.iloc[0][0]})</span>"
             )
         return "<span style='background:lightgreen;'>Sweep passed QC!</span>"
+
+    def apply_global_filter(self, query_string):
+        """
+        Apply a query filter to the metadata DataFrame.
+        
+        Args:
+            query_string: A string in pandas query format to filter the metadata
+        
+        Returns:
+            Filtered DataFrame
+        """
+        if not query_string.strip():
+            # If query is empty, reset to the full dataset
+            self.filtered_df_meta = self.df_meta.copy()
+            return f"Reset to full dataset (N={len(self.filtered_df_meta)})"
+        
+        try:
+            # Apply the filter query
+            filtered = self.df_meta.query(query_string)
+            if len(filtered) == 0:
+                return f"Query returned 0 results. Filter not applied."
+            
+            # Update the filtered dataframe
+            self.filtered_df_meta = filtered
+            
+            # Update scatter plot and raw spike analysis to use the filtered data
+            self.scatter_plot.df_meta = self.filtered_df_meta
+            self.raw_spike_analysis.df_meta = self.filtered_df_meta
+            
+            return f"Query applied. {len(filtered)} records match (out of {len(self.df_meta)})."
+        except Exception as e:
+            return f"Error in query: {str(e)}"
 
     def create_scatter_plot(self):
         """
@@ -574,8 +609,55 @@ class PatchSeqNWBApp(param.Parameterized):
             lambda show: pn.Column(pane_one_cell) if show else pn.Column(), show_sweeps.param.value
         )
 
+        # --- Connect global filter components ---
+        filter_query = pn.widgets.TextInput(
+            name="Query string", 
+            placeholder="Enter a pandas query string",
+            width=500,
+        )
+        
+        filter_button = pn.widgets.Button(
+            name="Apply filter", 
+            button_type="primary",
+            width=100,
+        )
+        
+        filter_status = pn.pane.Markdown("")
+        
+        # Connect the button to the filter function
+        def apply_filter_callback(event):
+            result = self.apply_global_filter(filter_query.value)
+            filter_status.object = result
+        
+        filter_button.on_click(apply_filter_callback)
+        # --- End filter components ---
+
         layout = pn.Column(
             pn.pane.Markdown("# Patch-seq Ephys Data Explorer\n"),
+            # Add global filter UI
+            pn.Row(
+                pn.Column(
+                    pn.pane.Markdown("## Global Filter"),
+                    pn.pane.Markdown(
+                        """
+                        Enter a pandas query to filter cells. Examples:
+                        - `"Retro" in injection region`
+                        - `LC_targeting == "retro" and y_tab_master < -6500`
+                        - `Th > 2 and Dbh > 2`
+                        - `injection region == "Non-Retro" and efel_AP_width @ long_square_rheo, min < 1.0`
+                        
+                        Leave blank to reset.
+                        """
+                    ),
+                    width=500,
+                ),
+                pn.Column(
+                    filter_query,
+                    filter_button,
+                    filter_status,
+                    width=600,
+                ),
+            ),
             pn.Column(
                 pn.pane.Markdown(f"## Extracted Features (N = {len(self.df_meta)})"),
             ),
