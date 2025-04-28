@@ -11,7 +11,7 @@ import panel as pn
 from bokeh.layouts import gridplot
 from bokeh.models import BoxZoomTool, ColumnDataSource, DatetimeTickFormatter, HoverTool
 from bokeh.plotting import figure
-from sklearn.metrics import calinski_harabasz_score, davies_bouldin_score, silhouette_score
+from sklearn.metrics import silhouette_score
 from sklearn.mixture import GaussianMixture
 
 from LCNE_patchseq_analysis.panel_app.components.color_mapping import ColorMapping
@@ -216,17 +216,17 @@ class ScatterPlot:
         """Create tooltips for the hover tool."""
 
         tooltips = f"""
-             <div style="text-align: left; flex: auto; white-space: nowrap; margin: 0 10px; 
+             <div style="text-align: left; flex: auto; white-space: nowrap; margin: 0 10px;
                        border: 2px solid black; padding: 10px;">
                     <span style="font-size: 17px;">
-                        <b>@Date_str, @{{injection region}}, @{{ephys_roi_id}}, 
+                        <b>@Date_str, @{{injection region}}, @{{ephys_roi_id}},
                             @{{jem-id_cell_specimen}}</b><br>
                         <b>X = @{{{x_col}}}</b> [{x_col}]<br>
                         <b>Y = @{{{y_col}}}</b> [{y_col}]<br>
                         <b> Color = @{{{color_col}}}</b> [{color_col}]<br>
                         <b> Size = @{{{size_col}}}</b> [{size_col}]<br>
                     </span>
-                 <img src="@cell_summary_url{{safe}}" alt="Cell Summary" 
+                 <img src="@cell_summary_url{{safe}}" alt="Cell Summary"
                         style="width: 800px; height: auto;">
              </div>
              """

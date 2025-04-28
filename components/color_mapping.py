@@ -2,7 +2,7 @@
 Color mapping utilities for the scatter plot.
 """
 
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, Union
 
 import numpy as np
 import pandas as pd
@@ -41,7 +41,7 @@ class ColorMapping:
         p.add_layout(color_bar, "right")
         return color_bar
 
-    def determine_color_mapping(
+    def determine_color_mapping(  # noqa: C901
         self, color_mapping: str, color_palette: Any, p: figure, font_size: int = 14
     ) -> Dict[str, Any]:
         """

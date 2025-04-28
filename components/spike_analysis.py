@@ -14,7 +14,7 @@ from scipy.signal import savgol_filter
 from scipy.stats import multivariate_normal
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
-from sklearn.metrics import calinski_harabasz_score, davies_bouldin_score, silhouette_score
+from sklearn.metrics import silhouette_score
 from umap import UMAP
 
 from LCNE_patchseq_analysis import REGION_COLOR_MAPPER
@@ -270,13 +270,13 @@ class RawSpikeAnalysis:
         """Create tooltips for the hover tool."""
 
         tooltips = """
-             <div style="text-align: left; flex: auto; white-space: nowrap; margin: 0 10px; 
+             <div style="text-align: left; flex: auto; white-space: nowrap; margin: 0 10px;
                        border: 2px solid black; padding: 10px;">
                     <span style="font-size: 17px;">
-                        <b>@Date_str, @{injection region}, @{ephys_roi_id}, 
+                        <b>@Date_str, @{injection region}, @{ephys_roi_id},
                             @{jem-id_cell_specimen}</b><br>
                     </span>
-                    <img src="@cell_summary_url{safe}" alt="Cell Summary" 
+                    <img src="@cell_summary_url{safe}" alt="Cell Summary"
                          style="width: 800px; height: auto;">
              </div>
              """
@@ -332,7 +332,8 @@ class RawSpikeAnalysis:
             **plot_settings,
         )
         p2 = figure(
-            title=f"Raw Vm, normalized between {self.normalize_window_v[0]} to {self.normalize_window_v[1]} ms",
+            title=f"Raw Vm, normalized between {self.normalize_window_v[0]} "
+            f"to {self.normalize_window_v[1]} ms",
             x_axis_label="Time (ms)",
             y_axis_label="V",
             x_range=(spike_range[0] - 0.1, spike_range[1] + 0.1),
@@ -340,7 +341,8 @@ class RawSpikeAnalysis:
             **plot_settings,
         )
         p3 = figure(
-            title=f"dV/dt, normalized betwen {self.normalize_window_dvdt[0]} to {self.normalize_window_dvdt[1]} ms",
+            title=f"dV/dt, normalized betwen {self.normalize_window_dvdt[0]} "
+            f"to {self.normalize_window_dvdt[1]} ms",
             x_axis_label="Time (ms)",
             y_axis_label="dV/dt",
             x_range=(spike_range[0] - 0.1, spike_range[1] + 0.1),
@@ -468,7 +470,7 @@ class RawSpikeAnalysis:
 
         # Plot voltage and dV/dt traces
         for i in range(n_clusters):
-            query_str = f"cluster_id == @i"
+            query_str = "cluster_id == @i"
             group_label = f"Cluster {i+1}"
             if not if_show_cluster_on_retro:
                 query_str += " and `injection region` == 'Non-Retro'"
@@ -577,7 +579,8 @@ class RawSpikeAnalysis:
 
         # Add tooltips
         # Add renderers like this to solve bug like this:
-        #   File "/Users/han.hou/miniconda3/envs/patch-seq/lib/python3.10/site-packages/panel/io/location.py", line 57, in _get_location_params
+        #   File "/Users/han.hou/miniconda3/envs/patch-seq/lib/python3.10/
+        # site-packages/panel/io/location.py", line 57, in _get_location_params
         #     params['pathname'], search = uri.split('?')
         # ValueError: too many values to unpack (expected 2)
         # 2025-04-09 00:03:04,658 500 GET /patchseq_panel_viz??? (::1) 8541.01ms
