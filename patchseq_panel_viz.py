@@ -57,7 +57,7 @@ class PatchSeqNWBApp(param.Parameterized):
         self.data_holder = PatchSeqNWBApp.DataHolder()
 
         # Load and prepare metadata.
-        self.df_meta = load_ephys_metadata(if_with_efel=True, if_with_seq=True)
+        self.df_meta = load_ephys_metadata(if_from_s3=True, if_with_seq=True)
         self.df_meta.rename(
             columns={
                 "x": "X (A --> P)",
