@@ -649,10 +649,8 @@ class PatchSeqNWBApp(param.Parameterized):
                     pn.pane.Markdown(
                         """
                         Enter a pandas query to filter cells. Examples:
-                        - `"Retro" in injection region`
-                        - `LC_targeting == "retro" and y_tab_master < -6500`
-                        - `Th > 2 and Dbh > 2`
-                        - `injection region == "Non-Retro" and efel_AP_width @ long_square_rheo, min < 1.0`
+                        - `gene_Dbh (log_normed)` > 0 and `gene_Th (log_normed)` > 0
+                        - `LC_targeting` == "genotype"
                         
                         Leave blank to reset.
                         """
