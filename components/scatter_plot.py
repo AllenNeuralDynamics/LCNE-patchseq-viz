@@ -11,9 +11,8 @@ import panel as pn
 from bokeh.layouts import gridplot
 from bokeh.models import BoxZoomTool, ColumnDataSource, DatetimeTickFormatter, HoverTool
 from bokeh.plotting import figure
-
+from sklearn.metrics import calinski_harabasz_score, davies_bouldin_score, silhouette_score
 from sklearn.mixture import GaussianMixture
-from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
 
 from LCNE_patchseq_analysis.panel_app.components.color_mapping import ColorMapping
 from LCNE_patchseq_analysis.panel_app.components.size_mapping import SizeMapping
@@ -35,6 +34,7 @@ COLOR_PALETTES = [
     "Category20b",
     "Category20c",
 ]
+
 
 class ScatterPlot:
     """Handles scatter plot creation and updates."""
@@ -69,7 +69,7 @@ class ScatterPlot:
         numeric_cols = self.df_meta.select_dtypes(include=["number"]).columns.tolist()
         categorical_cols = self.df_meta.select_dtypes(include=["object"]).columns.tolist()
         available_cols = sorted(numeric_cols + categorical_cols)
-        
+
         # Append [valid N] to the available_cols for display purposes
         available_cols = [f"{col} [valid {self.df_meta[col].count()}]" for col in available_cols]
         all_cols = ["None"] + available_cols
@@ -78,22 +78,23 @@ class ScatterPlot:
             "x_axis_select": pn.widgets.Select(
                 name="X Axis",
                 options=all_cols,
-                value=[col for col in all_cols 
-                       if "Date" in col][0],
+                value=[col for col in all_cols if "Date" in col][0],
                 sizing_mode="stretch_width",
             ),
             "y_axis_select": pn.widgets.Select(
                 name="Y Axis",
                 options=all_cols,
-                value=[col for col in all_cols 
-                       if "efel_AP_duration_half_width @ long_square_rheo, min" in col][0],
+                value=[
+                    col
+                    for col in all_cols
+                    if "efel_AP_duration_half_width @ long_square_rheo, min" in col
+                ][0],
                 sizing_mode="stretch_width",
             ),
             "color_col_select": pn.widgets.Select(
                 name="Color By",
                 options=all_cols,
-                value=[col for col in all_cols 
-                       if "injection region" in col][0],
+                value=[col for col in all_cols if "injection region" in col][0],
                 sizing_mode="stretch_width",
             ),
             "color_palette_select": pn.widgets.Select(
@@ -105,8 +106,7 @@ class ScatterPlot:
             "size_col_select": pn.widgets.Select(
                 name="Size By",
                 options=all_cols,
-                value=[col for col in all_cols 
-                       if "efel_sag_ratio1 @ subthreshold, aver" in col][0],
+                value=[col for col in all_cols if "efel_sag_ratio1 @ subthreshold, aver" in col][0],
                 sizing_mode="stretch_width",
             ),
             "size_range_slider": pn.widgets.RangeSlider(
@@ -322,13 +322,13 @@ class ScatterPlot:
             if n_components > 1:
                 labels = gmm.predict(clean_data.values.reshape(-1, 1))
                 silhouette = silhouette_score(clean_data.values.reshape(-1, 1), labels)
-                
+
                 # Calculate BIC and AIC
                 bic = gmm.bic(clean_data.values.reshape(-1, 1))
             else:
                 bic = np.nan
                 silhouette = np.nan
-            
+
             p.line(
                 *((domain, density) if orientation == "x" else (density, domain)),
                 line_color="black",
@@ -356,12 +356,9 @@ class ScatterPlot:
 
             # Add metrics to the plot title
             axis_to_show = p.xaxis if orientation == "x" else p.yaxis
-            
-            axis_to_show.axis_label = (
-                f"Silhouette: {silhouette:.3f}, "
-                f"BIC: {bic:.3f}"
-            )
-            
+
+            axis_to_show.axis_label = f"Silhouette: {silhouette:.3f}, " f"BIC: {bic:.3f}"
+
             # Font size
             axis_to_show.axis_label_text_font_size = "10pt"
             axis_to_show.major_label_text_font_size = "0pt"
@@ -397,7 +394,7 @@ class ScatterPlot:
         y_col = y_col.split(" [valid ")[0]
         color_col = color_col.split(" [valid ")[0]
         size_col = size_col.split(" [valid ")[0]
-        
+
         # Create a new figure for the main scatter plot
         p = figure(
             x_axis_label=x_col,
@@ -420,8 +417,9 @@ class ScatterPlot:
             )
 
         # Determine color mapping
-        color = self.color_mapping.determine_color_mapping(color_col, color_palette,
-                                                           p, font_size=font_size)
+        color = self.color_mapping.determine_color_mapping(
+            color_col, color_palette, p, font_size=font_size
+        )
 
         # Determine size mapping
         size = self.size_mapping.determine_size_mapping(
@@ -468,7 +466,7 @@ class ScatterPlot:
         # Set major tick label font sizes
         p.xaxis.major_label_text_font_size = f"{font_size*0.9}pt"
         p.yaxis.major_label_text_font_size = f"{font_size*0.9}pt"
-        
+
         # Create marginal histograms
         x_hist = None
         try:
@@ -505,7 +503,6 @@ class ScatterPlot:
         except Exception as e:
             logger.warning(f"Could not create y histogram: {e}")
             y_hist = None
-
 
         # Count non-NaN values grouped by "injection region"
         count_non_nan = self.df_meta.groupby("injection region")[[x_col, y_col]].count().T

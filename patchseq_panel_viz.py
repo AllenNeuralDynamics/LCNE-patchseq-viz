@@ -23,9 +23,9 @@ from LCNE_patchseq_analysis.efel.io import load_efel_features_from_roi
 from LCNE_patchseq_analysis.panel_app.components.scatter_plot import ScatterPlot
 from LCNE_patchseq_analysis.panel_app.components.spike_analysis import RawSpikeAnalysis
 from LCNE_patchseq_analysis.pipeline_util.s3 import (
+    S3_PUBLIC_URL_BASE,
     get_public_url_cell_summary,
     get_public_url_sweep,
-    S3_PUBLIC_URL_BASE,
 )
 
 logging.basicConfig(level=logging.DEBUG)
@@ -86,7 +86,7 @@ class PatchSeqNWBApp(param.Parameterized):
 
         # Initialize scatter plot component
         self.scatter_plot = ScatterPlot(self.df_meta, self.data_holder)
-        
+
         # Initialize spike analysis component
         self.raw_spike_analysis = RawSpikeAnalysis(self.df_meta, main_app=self)
 
@@ -168,7 +168,7 @@ class PatchSeqNWBApp(param.Parameterized):
         Create the scatter plot panel using the ScatterPlot component.
         """
         control_width = 300
-        
+
         # Get plot controls from the scatter plot component
         controls = self.scatter_plot.create_plot_controls(width=control_width)
 
@@ -300,7 +300,9 @@ class PatchSeqNWBApp(param.Parameterized):
                 ),
                 ephys_roi_id=self.data_holder.param.ephys_roi_id_selected,
             ),
-            pn.bind(get_s3_cell_summary_plot, ephys_roi_id=self.data_holder.param.ephys_roi_id_selected),
+            pn.bind(
+                get_s3_cell_summary_plot, ephys_roi_id=self.data_holder.param.ephys_roi_id_selected
+            ),
             sizing_mode="stretch_width",
         )
 
@@ -472,10 +474,20 @@ class PatchSeqNWBApp(param.Parameterized):
         # Create spike analysis controls and plots
         spike_controls = self.raw_spike_analysis.create_plot_controls()
 
-        def update_spike_plots(extract_from, n_clusters, alpha, width, height, 
-                               marker_size, normalize_window_v, normalize_window_dvdt, 
-                               if_show_cluster_on_retro, spike_range, dim_reduction_method,
-                               font_size):
+        def update_spike_plots(
+            extract_from,
+            n_clusters,
+            alpha,
+            width,
+            height,
+            marker_size,
+            normalize_window_v,
+            normalize_window_dvdt,
+            if_show_cluster_on_retro,
+            spike_range,
+            dim_reduction_method,
+            font_size,
+        ):
             # Extract representative spikes
             df_v_norm, df_dvdt_norm = self.raw_spike_analysis.extract_representative_spikes(
                 extract_from=extract_from,
@@ -485,7 +497,7 @@ class PatchSeqNWBApp(param.Parameterized):
                 normalize_window_dvdt=normalize_window_dvdt,
                 if_smooth_dvdt=False,
             )
-            
+
             # Create spike analysis plots
             return self.raw_spike_analysis.create_raw_PCA_plots(
                 df_v_norm=df_v_norm,
@@ -500,21 +512,31 @@ class PatchSeqNWBApp(param.Parameterized):
                 dim_reduction_method=dim_reduction_method,
                 font_size=font_size,
             )
-        
+
         # Create spike analysis plots
         controls = spike_controls  # shorter name for readability
         param_keys = [
-            "n_clusters", "alpha_slider", "plot_width", "if_show_cluster_on_retro",
-            "plot_height", "marker_size", "normalize_window_v", "normalize_window_dvdt",
-            "spike_range", "dim_reduction_method", "font_size"
+            "n_clusters",
+            "alpha_slider",
+            "plot_width",
+            "if_show_cluster_on_retro",
+            "plot_height",
+            "marker_size",
+            "normalize_window_v",
+            "normalize_window_dvdt",
+            "spike_range",
+            "dim_reduction_method",
+            "font_size",
         ]
         params = {
-            k: controls[k].param.value_throttled
-            if k not in ["if_show_cluster_on_retro", "dim_reduction_method"]
-            else controls[k].param.value
+            k: (
+                controls[k].param.value_throttled
+                if k not in ["if_show_cluster_on_retro", "dim_reduction_method"]
+                else controls[k].param.value
+            )
             for k in param_keys
         }
-        
+
         spike_plots = pn.bind(
             update_spike_plots,
             extract_from=controls["extract_from"].param.value,
@@ -554,12 +576,11 @@ class PatchSeqNWBApp(param.Parameterized):
 
         layout = pn.Column(
             pn.pane.Markdown("# Patch-seq Ephys Data Explorer\n"),
-
             pn.Column(
                 pn.pane.Markdown(f"## Extracted Features (N = {len(self.df_meta)})"),
             ),
             pane_cell_selector,
-            pn.layout.Divider(),            
+            pn.layout.Divider(),
             pn.Column(
                 pn.pane.Markdown("## Raw Spikes"),
                 pn.Row(
@@ -574,8 +595,10 @@ class PatchSeqNWBApp(param.Parameterized):
             pn.Accordion(
                 (
                     "Distribution of all features",
-                    pn.pane.PNG(S3_PUBLIC_URL_BASE + "/efel/cell_stats/distribution_all_features.png", 
-                                width=1300),
+                    pn.pane.PNG(
+                        S3_PUBLIC_URL_BASE + "/efel/cell_stats/distribution_all_features.png",
+                        width=1300,
+                    ),
                 ),
             ),
             margin=(20, 20, 0, 20),  # top, right, bottom, left margins in pixels

@@ -2,23 +2,25 @@
 Spike analysis component for the visualization app.
 """
 
+from functools import partial
+
 import numpy as np
 import pandas as pd
 import panel as pn
-from functools import partial
-
 from bokeh.layouts import gridplot
-from bokeh.models import Span, BoxZoomTool, WheelZoomTool, ColumnDataSource, HoverTool
+from bokeh.models import BoxZoomTool, ColumnDataSource, HoverTool, Span, WheelZoomTool
 from bokeh.plotting import figure
-from sklearn.decomposition import PCA
-from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
-from sklearn.cluster import KMeans
-from scipy.stats import multivariate_normal
 from scipy.signal import savgol_filter
+from scipy.stats import multivariate_normal
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
+from sklearn.metrics import calinski_harabasz_score, davies_bouldin_score, silhouette_score
 from umap import UMAP
 
-from LCNE_patchseq_analysis.pipeline_util.s3 import get_public_representative_spikes
 from LCNE_patchseq_analysis import REGION_COLOR_MAPPER
+from LCNE_patchseq_analysis.pipeline_util.s3 import get_public_representative_spikes
+
+
 class RawSpikeAnalysis:
     """Handles spike waveform analysis and visualization."""
 
@@ -26,7 +28,7 @@ class RawSpikeAnalysis:
         """Initialize with metadata dataframe."""
         self.main_app = main_app
         self.df_meta = df_meta
-                
+
         # Load extracted raw spike data
         self.df_spikes = get_public_representative_spikes()
         self.extract_from_options = self.df_spikes.index.get_level_values(1).unique()
@@ -83,7 +85,7 @@ class RawSpikeAnalysis:
         # For each cell, place its dvdt trace in the correct position
         for i, (row, peak_idx) in enumerate(zip(dvdt, dvdt_max_idx)):
             start_idx = dvdt_max_idx.max() - peak_idx  # Align the max_index
-            new_dvdt[i, start_idx:start_idx + len(row)] = row
+            new_dvdt[i, start_idx : start_idx + len(row)] = row
 
         # Normalize the v
         if if_normalize_v:
@@ -98,7 +100,8 @@ class RawSpikeAnalysis:
         # Create dictionary with ephys_roi_id as keys
         df_v_norm = pd.DataFrame(v, index=df_waveforms.index.get_level_values(0), columns=t)
         df_dvdt_norm = pd.DataFrame(
-            new_dvdt, index=df_waveforms.index.get_level_values(0), columns=t_dvdt)
+            new_dvdt, index=df_waveforms.index.get_level_values(0), columns=t_dvdt
+        )
 
         return df_v_norm, df_dvdt_norm
 
@@ -197,10 +200,12 @@ class RawSpikeAnalysis:
         }
         return controls
 
-    def perform_dim_reduction_clustering(self, df_v_norm: pd.DataFrame, n_clusters: int = 2, method: str = "PCA"):
+    def perform_dim_reduction_clustering(
+        self, df_v_norm: pd.DataFrame, n_clusters: int = 2, method: str = "PCA"
+    ):
         """
         Perform dimensionality reduction and K-means clustering on the voltage traces.
-        
+
         Parameters:
             df_v_norm : pd.DataFrame
                 Normalized voltage traces
@@ -210,7 +215,7 @@ class RawSpikeAnalysis:
                 Dimensionality reduction method ("PCA" or "UMAP")
         """
         v = df_v_norm.values
-        
+
         if method == "PCA":
             # Perform PCA
             reducer = PCA()
@@ -227,7 +232,7 @@ class RawSpikeAnalysis:
         # K-means clustering
         kmeans = KMeans(n_clusters=n_clusters, random_state=42)
         clusters = kmeans.fit_predict(v_proj[:, :2])
-        
+
         # Calculate metrics
         silhouette_avg = silhouette_score(v_proj[:, :2], clusters)
         metrics = {
@@ -235,20 +240,27 @@ class RawSpikeAnalysis:
         }
 
         # Save data
-        df_v_proj = pd.DataFrame(v_proj[:, :n_components], index=df_v_norm.index,
-                                columns=columns)
-        
+        df_v_proj = pd.DataFrame(v_proj[:, :n_components], index=df_v_norm.index, columns=columns)
+
         # Add cluster information to df_v_norm
         clusters_df = pd.DataFrame(clusters, index=df_v_norm.index, columns=["cluster_id"])
         self.df_meta = self.df_meta[
-            [col for col in self.df_meta.columns if col != "cluster_id"]].merge(
-                clusters_df, on="ephys_roi_id", how="left")
+            [col for col in self.df_meta.columns if col != "cluster_id"]
+        ].merge(clusters_df, on="ephys_roi_id", how="left")
         df_v_proj = df_v_proj.merge(clusters_df, on="ephys_roi_id", how="left")
-        df_v_proj = df_v_proj.merge(self.df_meta[
-            ["Date_str", "ephys_roi_id", "injection region", "cell_summary_url", "jem-id_cell_specimen"]],
+        df_v_proj = df_v_proj.merge(
+            self.df_meta[
+                [
+                    "Date_str",
+                    "ephys_roi_id",
+                    "injection region",
+                    "cell_summary_url",
+                    "jem-id_cell_specimen",
+                ]
+            ],
             on="ephys_roi_id",
-            how="left"
-            )
+            how="left",
+        )
 
         return df_v_proj, clusters, reducer, metrics
 
@@ -270,7 +282,7 @@ class RawSpikeAnalysis:
              """
 
         return tooltips
-    
+
     # Add callback to update ephys_roi_id on point tap
     def update_ephys_roi_id(self, df, attr, old, new):
         if new:
@@ -296,42 +308,44 @@ class RawSpikeAnalysis:
     ) -> gridplot:
         """Create plots for spike analysis including dimensionality reduction and clustering."""
         # Filter data based on spike_range
-        df_v_norm = df_v_norm.loc[:, (df_v_norm.columns >= spike_range[0]) & (df_v_norm.columns <= spike_range[1])]
-        df_dvdt_norm = df_dvdt_norm.loc[:, (df_dvdt_norm.columns >= spike_range[0]) & (df_dvdt_norm.columns <= spike_range[1])]
+        df_v_norm = df_v_norm.loc[
+            :, (df_v_norm.columns >= spike_range[0]) & (df_v_norm.columns <= spike_range[1])
+        ]
+        df_dvdt_norm = df_dvdt_norm.loc[
+            :, (df_dvdt_norm.columns >= spike_range[0]) & (df_dvdt_norm.columns <= spike_range[1])
+        ]
 
         # Perform dimensionality reduction and clustering
         df_v_proj, clusters, reducer, metrics = self.perform_dim_reduction_clustering(
-            df_v_norm, n_clusters, dim_reduction_method)      
+            df_v_norm, n_clusters, dim_reduction_method
+        )
         cluster_colors = ["black", "darkgray", "darkblue", "cyan", "darkorange"][:n_clusters]
 
         # Common plot settings
-        plot_settings = dict(
-            width=width,
-            height=height
-        )
+        plot_settings = dict(width=width, height=height)
 
         # Create figures
         p1 = figure(
             x_axis_label=f"{dim_reduction_method}1",
             y_axis_label=f"{dim_reduction_method}2",
             tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
-            **plot_settings
+            **plot_settings,
         )
         p2 = figure(
             title=f"Raw Vm, normalized between {self.normalize_window_v[0]} to {self.normalize_window_v[1]} ms",
             x_axis_label="Time (ms)",
             y_axis_label="V",
-            x_range=(spike_range[0]-0.1, spike_range[1]+0.1),
+            x_range=(spike_range[0] - 0.1, spike_range[1] + 0.1),
             tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
-            **plot_settings
+            **plot_settings,
         )
         p3 = figure(
             title=f"dV/dt, normalized betwen {self.normalize_window_dvdt[0]} to {self.normalize_window_dvdt[1]} ms",
             x_axis_label="Time (ms)",
             y_axis_label="dV/dt",
-            x_range=(spike_range[0]-0.1, spike_range[1]+0.1),
+            x_range=(spike_range[0] - 0.1, spike_range[1] + 0.1),
             tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
-            **plot_settings
+            **plot_settings,
         )
 
         # Update font sizes after figure creation
@@ -353,7 +367,7 @@ class RawSpikeAnalysis:
         # Create a single ColumnDataSource for all clusters
         # If injection region is not "Non-Retro", set color to None
         scatter_list_p1 = []
-        
+
         for i in df_v_proj["cluster_id"].unique():
             # Add dots
             querystr = "cluster_id == @i"
@@ -361,57 +375,88 @@ class RawSpikeAnalysis:
             if not if_show_cluster_on_retro:
                 querystr += " and `injection region` == 'Non-Retro'"
                 group_label += " (Non-Retro)"
-                
+
             group_label += f", n={df_v_proj.query(querystr).shape[0]}"
-                
+
             source = ColumnDataSource(df_v_proj.query(querystr))
-            scatter_list_p1.append(p1.scatter(
-                x=f"{dim_reduction_method}1",
-                y=f"{dim_reduction_method}2",
-                source=source,
-                size=marker_size,
-                color=cluster_colors[i],
-                alpha=alpha,
-                legend_label=group_label,
-                hover_color="blue",
-                selection_color="blue",
-            ))
-                        
+            scatter_list_p1.append(
+                p1.scatter(
+                    x=f"{dim_reduction_method}1",
+                    y=f"{dim_reduction_method}2",
+                    source=source,
+                    size=marker_size,
+                    color=cluster_colors[i],
+                    alpha=alpha,
+                    legend_label=group_label,
+                    hover_color="blue",
+                    selection_color="blue",
+                )
+            )
+
             # Attach the callback to the selection changes
-            source.selected.on_change("indices", 
-                                      partial(self.update_ephys_roi_id, source.data))         
-            
+            source.selected.on_change("indices", partial(self.update_ephys_roi_id, source.data))
+
             # Add contours
-            values = df_v_proj.query("cluster_id == @i").loc[:, [f"{dim_reduction_method}1", f"{dim_reduction_method}2"]].values
+            values = (
+                df_v_proj.query("cluster_id == @i")
+                .loc[:, [f"{dim_reduction_method}1", f"{dim_reduction_method}2"]]
+                .values
+            )
             mean = np.mean(values, axis=0)
             cov = np.cov(values.T)
             x, y = np.mgrid[
-                values[:, 0].min() - 0.5:values[:, 0].max() + 0.5:100j,
-                values[:, 1].min() - 0.5:values[:, 1].max() + 0.5:100j,
+                values[:, 0].min() - 0.5 : values[:, 0].max() + 0.5 : 100j,
+                values[:, 1].min() - 0.5 : values[:, 1].max() + 0.5 : 100j,
             ]
             pos = np.dstack((x, y))
             rv = multivariate_normal(mean, cov)
             z = rv.pdf(pos)
             add_counter(p1, x, y, z, levels=3, line_color=cluster_colors[i], alpha=1)
-          
+
         # Add metrics to the plot
-        p1.title.text = f"{dim_reduction_method} + K-means Clustering (n_clusters = {n_clusters})\n" \
-                        f"Silhouette Score: {metrics['silhouette_avg']:.3f}\n"
+        p1.title.text = (
+            f"{dim_reduction_method} + K-means Clustering (n_clusters = {n_clusters})\n"
+            f"Silhouette Score: {metrics['silhouette_avg']:.3f}\n"
+        )
         p1.toolbar.active_scroll = p1.select_one(WheelZoomTool)
-            
+
         # Add vertical lines for normalization windows
-        p2.add_layout(Span(
-            location=self.normalize_window_v[0], dimension='height', 
-            line_color='blue', line_dash='dashed', line_width=2))
-        p2.add_layout(Span(
-            location=self.normalize_window_v[1], dimension='height', 
-            line_color='blue', line_dash='dashed', line_width=2))
-        p3.add_layout(Span(
-            location=self.normalize_window_dvdt[0], dimension='height', 
-            line_color='blue', line_dash='dashed', line_width=2))
-        p3.add_layout(Span(
-            location=self.normalize_window_dvdt[1], dimension='height', 
-            line_color='blue', line_dash='dashed', line_width=2))
+        p2.add_layout(
+            Span(
+                location=self.normalize_window_v[0],
+                dimension="height",
+                line_color="blue",
+                line_dash="dashed",
+                line_width=2,
+            )
+        )
+        p2.add_layout(
+            Span(
+                location=self.normalize_window_v[1],
+                dimension="height",
+                line_color="blue",
+                line_dash="dashed",
+                line_width=2,
+            )
+        )
+        p3.add_layout(
+            Span(
+                location=self.normalize_window_dvdt[0],
+                dimension="height",
+                line_color="blue",
+                line_dash="dashed",
+                line_width=2,
+            )
+        )
+        p3.add_layout(
+            Span(
+                location=self.normalize_window_dvdt[1],
+                dimension="height",
+                line_color="blue",
+                line_dash="dashed",
+                line_width=2,
+            )
+        )
 
         # Add boxzoomtool to p2 and p3
         box_zoom_x = BoxZoomTool(dimensions="auto")
@@ -430,24 +475,26 @@ class RawSpikeAnalysis:
                 group_label += " (Non-Retro)"
             group_label += f", n={df_v_proj.query(query_str).shape[0]}"
             ephys_roi_ids = df_v_proj.query(query_str).ephys_roi_id.tolist()
-            
+
             # Common line properties
             line_props = {
-                'alpha': alpha,
-                'hover_line_color': 'blue',
-                'hover_line_alpha': 1.0,
-                'hover_line_width': 4,
-                'selection_line_color': 'blue',
-                'selection_line_alpha': 1.0,
-                'selection_line_width': 4,
+                "alpha": alpha,
+                "hover_line_color": "blue",
+                "hover_line_alpha": 1.0,
+                "hover_line_width": 4,
+                "selection_line_color": "blue",
+                "selection_line_alpha": 1.0,
+                "selection_line_width": 4,
             }
             # Plot voltage traces
             df_this = df_v_norm.query("ephys_roi_id in @ephys_roi_ids")
-            source = ColumnDataSource({
-                "xs": [df_v_norm.columns.values] * len(df_this),
-                "ys": df_this.values.tolist(),
-                "ephys_roi_id": ephys_roi_ids,
-            })
+            source = ColumnDataSource(
+                {
+                    "xs": [df_v_norm.columns.values] * len(df_this),
+                    "ys": df_this.values.tolist(),
+                    "ephys_roi_id": ephys_roi_ids,
+                }
+            )
 
             p2.multi_line(
                 source=source,
@@ -457,14 +504,16 @@ class RawSpikeAnalysis:
                 **line_props,
                 legend_label=group_label,
             )
-            
+
             # Plot dV/dt traces
             df_this = df_dvdt_norm.query("ephys_roi_id in @ephys_roi_ids")
-            source = ColumnDataSource({
-                "xs": [df_dvdt_norm.columns.values] * len(df_this),
-                "ys": df_this.values.tolist(),
-                "ephys_roi_id": ephys_roi_ids,
-            })
+            source = ColumnDataSource(
+                {
+                    "xs": [df_dvdt_norm.columns.values] * len(df_this),
+                    "ys": df_this.values.tolist(),
+                    "ephys_roi_id": ephys_roi_ids,
+                }
+            )
             p3.multi_line(
                 source=source,
                 xs="xs",
@@ -473,41 +522,40 @@ class RawSpikeAnalysis:
                 **line_props,
                 legend_label=group_label,
             )
-            
-            
+
         # Add region cluster_colors to the all plots
         for region in self.df_meta["injection region"].unique():
             if region == "Non-Retro":
                 continue
             roi_ids = self.df_meta.query("`injection region` == @region").ephys_roi_id.tolist()
             legend_label = f"{region}, n={len(roi_ids)}"
-            
+
             source = ColumnDataSource(df_v_proj.query("ephys_roi_id in @roi_ids"))
-            scatter_list_p1.append(p1.scatter(
-                x=f"{dim_reduction_method}1",
-                y=f"{dim_reduction_method}2",
-                source=source,
-                color=REGION_COLOR_MAPPER[region],
-                alpha=0.8,
-                size=marker_size,
-                legend_label=legend_label,
-            ))
-                        
+            scatter_list_p1.append(
+                p1.scatter(
+                    x=f"{dim_reduction_method}1",
+                    y=f"{dim_reduction_method}2",
+                    source=source,
+                    color=REGION_COLOR_MAPPER[region],
+                    alpha=0.8,
+                    size=marker_size,
+                    legend_label=legend_label,
+                )
+            )
+
             # Attach the callback to the selection changes
-            source.selected.on_change("indices", 
-                                      partial(self.update_ephys_roi_id, source.data))
-                        
-                        
+            source.selected.on_change("indices", partial(self.update_ephys_roi_id, source.data))
+
             ys = df_v_norm.query("ephys_roi_id in @roi_ids").values
-            
-             # Common line properties
+
+            # Common line properties
             line_props = {
-                'hover_line_color': 'blue',
-                'hover_line_alpha': 1.0,
-                'hover_line_width': 4,
-                'selection_line_color': 'blue',
-                'selection_line_alpha': 1.0,
-                'selection_line_width': 4,
+                "hover_line_color": "blue",
+                "hover_line_alpha": 1.0,
+                "hover_line_width": 4,
+                "selection_line_color": "blue",
+                "selection_line_alpha": 1.0,
+                "selection_line_width": 4,
             }
             p2.multi_line(
                 xs=[df_v_norm.query("ephys_roi_id in @roi_ids").columns.values] * ys.shape[0],
@@ -526,7 +574,7 @@ class RawSpikeAnalysis:
                 legend_label=legend_label,
                 **line_props,
             )
-        
+
         # Add tooltips
         # Add renderers like this to solve bug like this:
         #   File "/Users/han.hou/miniconda3/envs/patch-seq/lib/python3.10/site-packages/panel/io/location.py", line 57, in _get_location_params
@@ -538,33 +586,32 @@ class RawSpikeAnalysis:
             renderers=scatter_list_p1,
         )
         p1.add_tools(hovertool)
-        
+
         hovertool = HoverTool(
             tooltips=[("ephys_roi_id", "@ephys_roi_id")],
             attachment="right",  # Fix tooltip to the right of the plot
         )
         p2.add_tools(hovertool)
         p3.add_tools(hovertool)
-        
+
         for p in [p1, p2, p3]:
             p.legend.ncols = 2
             p.legend.background_fill_alpha = 0.5
             p.legend.location = "bottom_center"
-            p.legend.click_policy = "hide" 
+            p.legend.click_policy = "hide"
             p.legend.orientation = "horizontal"
-        
-        
+
         # Create grid layout with independent axes
         layout = gridplot([[p1, p2, p3]], toolbar_location="right", merge_tools=False)
         return layout
-    
-    
+
+
 def add_counter(p, x, y, z, levels=5, line_color="blue", alpha=0.5, line_width=2):
     """
     Add contour lines to a Bokeh figure.
 
     This function uses Matplotlib's contour function to compute contour lines
-    based on a grid defined by x, y, and corresponding values z. The contour lines 
+    based on a grid defined by x, y, and corresponding values z. The contour lines
     are then extracted and added to the provided Bokeh plot using the multi_line glyph.
 
     Parameters:
@@ -595,7 +642,7 @@ def add_counter(p, x, y, z, levels=5, line_color="blue", alpha=0.5, line_width=2
     # Use the 'allsegs' attribute which contains a list of segment lists
     for i, segs in enumerate(contour_set.allsegs):
         # Calculate decreasing alpha for each contour level
-        level_alpha = alpha * (i/len(contour_set.allsegs))
+        level_alpha = alpha * (i / len(contour_set.allsegs))
         for seg in segs:
             xs_list.append(seg[:, 0].tolist())
             ys_list.append(seg[:, 1].tolist())
@@ -603,15 +650,15 @@ def add_counter(p, x, y, z, levels=5, line_color="blue", alpha=0.5, line_width=2
 
     # Plot the extracted contour lines on the Bokeh figure with varying alpha
     renderer = p.multi_line(
-        xs=xs_list, 
-        ys=ys_list, 
+        xs=xs_list,
+        ys=ys_list,
         line_color=line_color,
-        line_alpha=alphas, 
+        line_alpha=alphas,
         line_width=line_width,
         name="contour_lines",  # Add a name for easier reference
-        level="underlay"  # Place contour lines under other glyphs
+        level="underlay",  # Place contour lines under other glyphs
     )
-    
+
     # Make contour lines non-interactive
     renderer.nonselection_glyph = None  # Disable selection
     renderer.selection_glyph = None  # Disable selection
