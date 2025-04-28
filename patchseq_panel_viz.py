@@ -67,6 +67,10 @@ class PatchSeqNWBApp(param.Parameterized):
             inplace=True,
         )
 
+        # Preprocess data: Convert NaN in "virus" column to "None"
+        if "virus" in self.df_meta.columns:
+            self.df_meta["virus"] = self.df_meta["virus"].fillna("None")
+
         self.cell_key = [
             "Date",
             "jem-id_cell_specimen",
@@ -470,7 +474,8 @@ class PatchSeqNWBApp(param.Parameterized):
 
         def update_spike_plots(extract_from, n_clusters, alpha, width, height, 
                                marker_size, normalize_window_v, normalize_window_dvdt, 
-                               if_show_cluster_on_retro, spike_range, dim_reduction_method):
+                               if_show_cluster_on_retro, spike_range, dim_reduction_method,
+                               font_size):
             # Extract representative spikes
             df_v_norm, df_dvdt_norm = self.raw_spike_analysis.extract_representative_spikes(
                 extract_from=extract_from,
@@ -493,6 +498,7 @@ class PatchSeqNWBApp(param.Parameterized):
                 if_show_cluster_on_retro=if_show_cluster_on_retro,
                 spike_range=spike_range,
                 dim_reduction_method=dim_reduction_method,
+                font_size=font_size,
             )
         
         # Create spike analysis plots
@@ -500,7 +506,7 @@ class PatchSeqNWBApp(param.Parameterized):
         param_keys = [
             "n_clusters", "alpha_slider", "plot_width", "if_show_cluster_on_retro",
             "plot_height", "marker_size", "normalize_window_v", "normalize_window_dvdt",
-            "spike_range", "dim_reduction_method"
+            "spike_range", "dim_reduction_method", "font_size"
         ]
         params = {
             k: controls[k].param.value_throttled
@@ -522,6 +528,7 @@ class PatchSeqNWBApp(param.Parameterized):
             normalize_window_dvdt=params["normalize_window_dvdt"],
             spike_range=params["spike_range"],
             dim_reduction_method=params["dim_reduction_method"],
+            font_size=params["font_size"],
         )
 
         # Bind the sweep panel to the current cell selection.

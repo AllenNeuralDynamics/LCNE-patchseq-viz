@@ -29,6 +29,7 @@ COLOR_PALETTES = [
     "Inferno256",
     "Cividis256",
     "Turbo256",
+    "Set3",
     "Category10",
     "Category20",
     "Category20b",
@@ -78,14 +79,14 @@ class ScatterPlot:
                 name="X Axis",
                 options=all_cols,
                 value=[col for col in all_cols 
-                       if "efel_AP_duration_half_width @ long_square_rheo, min" in col][0],
+                       if "Date" in col][0],
                 sizing_mode="stretch_width",
             ),
             "y_axis_select": pn.widgets.Select(
                 name="Y Axis",
                 options=all_cols,
                 value=[col for col in all_cols 
-                       if "Y (D --> V)" in col][0],
+                       if "efel_AP_duration_half_width @ long_square_rheo, min" in col][0],
                 sizing_mode="stretch_width",
             ),
             "color_col_select": pn.widgets.Select(
