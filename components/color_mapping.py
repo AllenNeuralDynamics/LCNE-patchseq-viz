@@ -2,13 +2,13 @@
 Color mapping utilities for the scatter plot.
 """
 
-from typing import Any, Dict, Union, List
+from typing import Any, Dict, Union
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 from bokeh.models import CategoricalColorMapper, ColorBar, LinearColorMapper
-from bokeh.plotting import figure
 from bokeh.palettes import all_palettes
+from bokeh.plotting import figure
 
 from LCNE_patchseq_analysis import REGION_COLOR_MAPPER
 
@@ -22,7 +22,8 @@ class ColorMapping:
         self.font_size = font_size
 
     def add_color_bar(
-        self, color_mapper: Union[CategoricalColorMapper, LinearColorMapper],
+        self,
+        color_mapper: Union[CategoricalColorMapper, LinearColorMapper],
         title: str,
         p: figure,
         font_size: int = 14,
@@ -40,7 +41,7 @@ class ColorMapping:
         p.add_layout(color_bar, "right")
         return color_bar
 
-    def determine_color_mapping(
+    def determine_color_mapping(  # noqa: C901
         self, color_mapping: str, color_palette: Any, p: figure, font_size: int = 14
     ) -> Dict[str, Any]:
         """
@@ -72,7 +73,7 @@ class ColorMapping:
         # If categorical (nunique <= 10), use categorical color mapper
         if self.df_meta[color_mapping].nunique() <= 10:
             n_categories = self.df_meta[color_mapping].nunique()
-            
+
             # Check if the provided color_palette is a string (name in all_palettes)
             if isinstance(color_palette, str) and color_palette in all_palettes:
                 # Use the named palette from all_palettes
@@ -100,13 +101,13 @@ class ColorMapping:
                             max_key = max(palettes.keys())
                             named_palette = palettes[max_key]
                         break
-                
+
                 # Use the named continuous palette or the provided palette
                 if named_palette is not None:
                     continuous_palette = named_palette
                 else:
                     continuous_palette = color_palette
-                
+
                 # Uniformly sample from the continuous colormap
                 if isinstance(continuous_palette, (list, tuple)):
                     indices = np.linspace(0, len(continuous_palette) - 1, n_categories).astype(int)
@@ -114,7 +115,7 @@ class ColorMapping:
                 else:
                     # If we can't determine the palette type, use a default
                     categorical_palette = all_palettes["Category10"][min(n_categories, 10)]
-            
+
             # Map "None" or NaN factors to "gray"
             factors = list(self.df_meta[color_mapping].unique())
             categorical_palette = list(categorical_palette)
