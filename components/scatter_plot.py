@@ -387,8 +387,12 @@ class ScatterPlot:
         show_gmm: bool = False,
         n_components_x: int = 2,
         n_components_y: int = 1,
+        df_meta: pd.DataFrame = None,
     ) -> gridplot:
         """Update the scatter plot with new parameters."""
+        # Use provided dataframe if supplied, otherwise use instance df_meta
+        df_to_use = df_meta if df_meta is not None else self.df_meta
+        
         # Strip off [valid N] from the column name
         x_col = x_col.split(" [valid ")[0]
         y_col = y_col.split(" [valid ")[0]
@@ -405,7 +409,7 @@ class ScatterPlot:
         )
 
         # Create ColumnDataSource from the dataframe
-        source = ColumnDataSource(self.df_meta)
+        source = ColumnDataSource(df_to_use)
 
         # If any column is Date, convert it to datetime
         if x_col == "Date":
@@ -416,13 +420,17 @@ class ScatterPlot:
                 days="%Y-%m-%d",
             )
 
+        # Create temporary color mapping for this specific dataframe
+        temp_color_mapping = ColorMapping(df_to_use)
         # Determine color mapping
-        color = self.color_mapping.determine_color_mapping(
+        color = temp_color_mapping.determine_color_mapping(
             color_col, color_palette, p, font_size=font_size
         )
 
+        # Create temporary size mapping for this specific dataframe
+        temp_size_mapping = SizeMapping(df_to_use)
         # Determine size mapping
-        size = self.size_mapping.determine_size_mapping(
+        size = temp_size_mapping.determine_size_mapping(
             size_col, source, min_size=size_range[0], max_size=size_range[1], gamma=size_gamma
         )
 
@@ -447,7 +455,7 @@ class ScatterPlot:
         def update_ephys_roi_id(attr, old, new):
             if new:
                 selected_index = new[0]
-                ephys_roi_id = str(int(self.df_meta.iloc[selected_index]["ephys_roi_id"]))
+                ephys_roi_id = str(int(df_to_use.iloc[selected_index]["ephys_roi_id"]))
                 logger.info(f"Selected ephys_roi_id: {ephys_roi_id}")
                 # Update the data holder's ephys_roi_id
                 if hasattr(self, "data_holder"):
@@ -472,7 +480,7 @@ class ScatterPlot:
         try:
             if x_col != "Date" and x_col != "None":  # Skip histogram for Date column
                 x_hist = self.create_marginal_histogram(
-                    self.df_meta[x_col],
+                    df_to_use[x_col],
                     "x",
                     width=width,
                     height=hist_height_slider,
@@ -490,7 +498,7 @@ class ScatterPlot:
         try:
             if y_col != "Date" and y_col != "None":  # Skip histogram for Date column
                 y_hist = self.create_marginal_histogram(
-                    self.df_meta[y_col],
+                    df_to_use[y_col],
                     "y",
                     width=hist_height_slider,
                     height=height,
@@ -505,7 +513,7 @@ class ScatterPlot:
             y_hist = None
 
         # Count non-NaN values grouped by "injection region"
-        count_non_nan = self.df_meta.groupby("injection region")[[x_col, y_col]].count().T
+        count_non_nan = df_to_use.groupby("injection region")[[x_col, y_col]].count().T
         count_non_nan.insert(0, "Total", count_non_nan.sum(axis=1))
         count_non_nan.index = pd.Index(["X", "Y"], name="Valid N")
 

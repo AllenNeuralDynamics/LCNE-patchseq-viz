@@ -48,6 +48,7 @@ class PatchSeqNWBApp(param.Parameterized):
 
         ephys_roi_id_selected = param.String(default="")
         sweep_number_selected = param.Integer(default=0)
+        filtered_df_meta = param.DataFrame()
 
     def __init__(self):
         """
@@ -57,10 +58,7 @@ class PatchSeqNWBApp(param.Parameterized):
         self.data_holder = PatchSeqNWBApp.DataHolder()
 
         # Load and prepare metadata.
-        self.df_meta = load_ephys_metadata(if_from_s3=True, if_with_seq=True)
-        # Create a copy for filtering - this will be updated by the global filter
-        self.filtered_df_meta = self.df_meta.copy()
-        
+        self.df_meta = load_ephys_metadata(if_from_s3=True, if_with_seq=True)        
         self.df_meta.rename(
             columns={
                 "x": "X (A --> P)",
@@ -92,9 +90,10 @@ class PatchSeqNWBApp(param.Parameterized):
 
         # Initialize spike analysis component
         self.raw_spike_analysis = RawSpikeAnalysis(self.df_meta, main_app=self)
+        
+        # Create a copy for filtering - this will be updated by the global filter
+        self.data_holder.filtered_df_meta = self.df_meta.copy()
 
-        # Create the cell selector panel once.
-        self.cell_selector_panel = self.create_cell_selector_panel()
 
     @staticmethod
     def update_bokeh(raw, sweep, downsample_factor=3):
@@ -178,8 +177,8 @@ class PatchSeqNWBApp(param.Parameterized):
         """
         if not query_string.strip():
             # If query is empty, reset to the full dataset
-            self.filtered_df_meta = self.df_meta.copy()
-            return f"Reset to full dataset (N={len(self.filtered_df_meta)})"
+            self.data_holder.filtered_df_meta = self.df_meta.copy()
+            return f"Reset to full dataset (N={len(self.data_holder.filtered_df_meta)})"
         
         try:
             # Apply the filter query
@@ -187,12 +186,9 @@ class PatchSeqNWBApp(param.Parameterized):
             if len(filtered) == 0:
                 return f"Query returned 0 results. Filter not applied."
             
-            # Update the filtered dataframe
-            self.filtered_df_meta = filtered
-            
-            # Update scatter plot and raw spike analysis to use the filtered data
-            self.scatter_plot.df_meta = self.filtered_df_meta
-            self.raw_spike_analysis.df_meta = self.filtered_df_meta
+            # Update the filtered dataframe in the data_holder
+            # This will trigger updates in any components bound to this parameter
+            self.data_holder.filtered_df_meta = filtered
             
             return f"Query applied. {len(filtered)} records match (out of {len(self.df_meta)})."
         except Exception as e:
@@ -226,6 +222,7 @@ class PatchSeqNWBApp(param.Parameterized):
             controls["show_gmm"].param.value,
             controls["n_components_x"].param.value,
             controls["n_components_y"].param.value,
+            df_meta=self.data_holder.param.filtered_df_meta,
         )
 
         return pn.Row(
@@ -267,12 +264,12 @@ class PatchSeqNWBApp(param.Parameterized):
             # width=800,
         )
 
-    def create_cell_selector_panel(self):
+    def create_cell_selector_panel(self, filtered_df_meta):
         """
         Builds and returns the cell selector panel that displays metadata.
         """
         # MultiSelect widget to choose additional columns.
-        cols = list(self.df_meta.columns)
+        cols = list(filtered_df_meta.columns)
         cols.sort()
         selectable_cols = [col for col in cols if col not in self.cell_key]
         col_selector = pn.widgets.MultiSelect(
@@ -288,10 +285,13 @@ class PatchSeqNWBApp(param.Parameterized):
             width=500,
         )
 
-        def add_df_meta_col(selected_columns):
-            return self.df_meta[self.cell_key + selected_columns]
+        def add_df_meta_col(selected_columns, filtered_df_meta):
+            """
+            Add selected columns from the filtered metadata DataFrame.
+            """
+            return filtered_df_meta[self.cell_key + selected_columns]
 
-        filtered_df_meta = pn.bind(add_df_meta_col, col_selector)
+        filtered_df_meta = pn.bind(add_df_meta_col, col_selector, filtered_df_meta)
         tab_df_meta = pn.widgets.Tabulator(
             filtered_df_meta,
             selectable=1,
@@ -311,7 +311,7 @@ class PatchSeqNWBApp(param.Parameterized):
             if event.new:
                 selected_index = event.new[0]
                 self.data_holder.ephys_roi_id_selected = str(
-                    int(self.df_meta.iloc[selected_index]["ephys_roi_id"])
+                    int(filtered_df_meta.iloc[selected_index]["ephys_roi_id"])
                 )
 
         tab_df_meta.param.watch(update_sweep_view_from_table, "selection")
@@ -504,7 +504,12 @@ class PatchSeqNWBApp(param.Parameterized):
         Constructs the full application layout.
         """
         pn.config.throttled = False
-        pane_cell_selector = self.cell_selector_panel
+        
+        # Create and bind the cell selector panel to filtered metadata
+        pane_cell_selector = pn.bind(
+            self.create_cell_selector_panel,
+            filtered_df_meta=self.data_holder.param.filtered_df_meta,
+        )
 
         # Create spike analysis controls and plots
         spike_controls = self.raw_spike_analysis.create_plot_controls()
@@ -516,12 +521,13 @@ class PatchSeqNWBApp(param.Parameterized):
             width,
             height,
             marker_size,
+            if_show_cluster_on_retro,
             normalize_window_v,
             normalize_window_dvdt,
-            if_show_cluster_on_retro,
             spike_range,
             dim_reduction_method,
             font_size,
+            filtered_df_meta=None,
         ):
             # Extract representative spikes
             df_v_norm, df_dvdt_norm = self.raw_spike_analysis.extract_representative_spikes(
@@ -531,9 +537,10 @@ class PatchSeqNWBApp(param.Parameterized):
                 if_normalize_dvdt=True,
                 normalize_window_dvdt=normalize_window_dvdt,
                 if_smooth_dvdt=False,
+                filtered_df_meta=filtered_df_meta,
             )
 
-            # Create spike analysis plots
+            # Create spike analysis plots with the filtered dataframe
             return self.raw_spike_analysis.create_raw_PCA_plots(
                 df_v_norm=df_v_norm,
                 df_dvdt_norm=df_dvdt_norm,
@@ -586,6 +593,7 @@ class PatchSeqNWBApp(param.Parameterized):
             spike_range=params["spike_range"],
             dim_reduction_method=params["dim_reduction_method"],
             font_size=params["font_size"],
+            filtered_df_meta=self.data_holder.param.filtered_df_meta,
         )
 
         # Bind the sweep panel to the current cell selection.
@@ -659,7 +667,12 @@ class PatchSeqNWBApp(param.Parameterized):
                 ),
             ),
             pn.Column(
-                pn.pane.Markdown(f"## Extracted Features (N = {len(self.df_meta)})"),
+                pn.bind(
+                    lambda filtered_df: pn.pane.Markdown(
+                        f"## Filtered cells (N = {len(filtered_df)})"
+                    ),
+                    filtered_df=self.data_holder.param.filtered_df_meta,
+                ),
             ),
             pane_cell_selector,
             pn.layout.Divider(),

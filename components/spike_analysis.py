@@ -48,10 +48,17 @@ class RawSpikeAnalysis:
         if_normalize_dvdt: bool = True,
         normalize_window_dvdt: tuple = (-2, 0),
         if_smooth_dvdt: bool = True,
+        filtered_df_meta: pd.DataFrame = None,
     ):
         """Extract and process representative spike waveforms."""
         # Get the waveforms
         df_waveforms = self.df_spikes.query("extract_from == @extract_from")
+        
+        # Filter by filtered_df_meta
+        if filtered_df_meta is not None:
+            df_waveforms = df_waveforms.query(
+                "ephys_roi_id in @filtered_df_meta.ephys_roi_id.values"
+            )
 
         if len(df_waveforms) == 0:
             raise ValueError(f"No waveforms found for extract_from={extract_from}")
@@ -305,9 +312,9 @@ class RawSpikeAnalysis:
         if_show_cluster_on_retro: bool = True,
         spike_range: tuple = (-4, 7),
         dim_reduction_method: str = "PCA",
-    ) -> gridplot:
+            ) -> gridplot:
         """Create plots for spike analysis including dimensionality reduction and clustering."""
-        # Filter data based on spike_range
+                # Filter data based on spike_range
         df_v_norm = df_v_norm.loc[
             :, (df_v_norm.columns >= spike_range[0]) & (df_v_norm.columns <= spike_range[1])
         ]
@@ -606,6 +613,7 @@ class RawSpikeAnalysis:
 
         # Create grid layout with independent axes
         layout = gridplot([[p1, p2, p3]], toolbar_location="right", merge_tools=False)
+        
         return layout
 
 
