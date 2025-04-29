@@ -7,6 +7,7 @@ panel serve panel_nwb_viz.py --dev --allow-websocket-origin=codeocean.allenneura
 
 import logging
 
+from numpy import ma
 import pandas as pd
 import panel as pn
 import param
@@ -16,6 +17,7 @@ from bokeh.models import (
     BoxZoomTool,
 )
 from bokeh.plotting import figure
+from pyconify import css
 
 from LCNE_patchseq_analysis.data_util.metadata import load_ephys_metadata
 from LCNE_patchseq_analysis.data_util.nwb import PatchSeqNWB
@@ -31,7 +33,8 @@ from LCNE_patchseq_analysis.pipeline_util.s3 import (
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# pn.extension("tabulator")
+# Initialize Panel with Bootstrap and Tabulator extensions
+pn.extension("tabulator", "bootstrap")
 curdoc().title = "LC-NE Patch-seq Data Explorer"
 
 
@@ -311,35 +314,12 @@ class PatchSeqNWBApp(param.Parameterized):
             if event.new:
                 selected_index = event.new[0]
                 self.data_holder.ephys_roi_id_selected = str(
-                    int(filtered_df_meta.iloc[selected_index]["ephys_roi_id"])
+                    int(self.data_holder.filtered_df_meta.iloc[selected_index]["ephys_roi_id"])
                 )
 
         tab_df_meta.param.watch(update_sweep_view_from_table, "selection")
 
         scatter_plot = self.create_scatter_plot()
-
-        # Add cell-level summary plot
-        def get_s3_cell_summary_plot(ephys_roi_id):
-            s3_url = get_public_url_cell_summary(ephys_roi_id)
-            if s3_url:
-                return pn.pane.PNG(s3_url, sizing_mode="stretch_width")
-            else:
-                return pn.pane.Markdown(
-                    "### Select the table or the scatter plot to view the cell summary plot."
-                )
-
-        s3_cell_summary_plot = pn.Column(
-            pn.bind(
-                lambda ephys_roi_id: pn.pane.Markdown(
-                    "## Cell summary plot" + (f" for {ephys_roi_id}" if ephys_roi_id else "")
-                ),
-                ephys_roi_id=self.data_holder.param.ephys_roi_id_selected,
-            ),
-            pn.bind(
-                get_s3_cell_summary_plot, ephys_roi_id=self.data_holder.param.ephys_roi_id_selected
-            ),
-            sizing_mode="stretch_width",
-        )
 
         cell_selector_panel = pn.Column(
             pn.Row(
@@ -349,7 +329,6 @@ class PatchSeqNWBApp(param.Parameterized):
             ),
             pn.Row(
                 scatter_plot,
-                s3_cell_summary_plot,
             ),
         )
         return cell_selector_panel
@@ -501,7 +480,7 @@ class PatchSeqNWBApp(param.Parameterized):
 
     def main_layout(self):
         """
-        Constructs the full application layout.
+        Constructs the full application layout with Bootstrap template.
         """
         pn.config.throttled = False
         
@@ -596,13 +575,40 @@ class PatchSeqNWBApp(param.Parameterized):
             filtered_df_meta=self.data_holder.param.filtered_df_meta,
         )
 
+        # Create cell summary plot
+        def get_s3_cell_summary_plot(ephys_roi_id):
+            s3_url = get_public_url_cell_summary(ephys_roi_id)
+            if s3_url:
+                return pn.pane.PNG(s3_url, sizing_mode="stretch_width")
+            else:
+                return pn.pane.Markdown(
+                    "### Select the table or the scatter plot to view the cell summary plot."
+                )
+
+        s3_cell_summary_plot = pn.Column(
+            pn.bind(
+                lambda ephys_roi_id: pn.pane.Markdown(
+                    "## Cell summary plot" + (f" for {ephys_roi_id}" if ephys_roi_id else "")
+                ),
+                ephys_roi_id=self.data_holder.param.ephys_roi_id_selected,
+            ),
+            pn.bind(
+                get_s3_cell_summary_plot, ephys_roi_id=self.data_holder.param.ephys_roi_id_selected
+            ),
+            sizing_mode="stretch_width",
+        )
+
         # Bind the sweep panel to the current cell selection.
         pane_one_cell = pn.bind(
             self.create_sweep_panel, ephys_roi_id=self.data_holder.param.ephys_roi_id_selected
         )
 
         # Create a toggle button for showing/hiding raw sweeps
-        show_sweeps_button = pn.widgets.Button(name="Show raw sweeps", button_type="primary")
+        show_sweeps_button = pn.widgets.Button(
+            name="Show raw sweeps", 
+            button_type="primary",
+            width=200
+        )
         show_sweeps = pn.widgets.Toggle(name="Show raw sweeps", value=False)
 
         # Link the button to the toggle
@@ -618,86 +624,165 @@ class PatchSeqNWBApp(param.Parameterized):
         )
 
         # --- Connect global filter components ---
-        filter_query = pn.widgets.TextInput(
+        filter_query = pn.widgets.TextAreaInput(
             name="Query string", 
             placeholder="Enter a pandas query string",
-            width=500,
+            sizing_mode="stretch_width",
+            height=100,
         )
         
         filter_button = pn.widgets.Button(
             name="Apply filter", 
             button_type="primary",
-            width=100,
+            width=150,
         )
         
-        filter_status = pn.pane.Markdown("")
+        reset_button = pn.widgets.Button(
+            name="Reset filter", 
+            button_type="light",
+            width=150,
+        )
+        
+        filter_status = pn.pane.Markdown("", css_classes=["alert", "p-2", "m-2"])
         
         # Connect the button to the filter function
         def apply_filter_callback(event):
             result = self.apply_global_filter(filter_query.value)
+            if "reset" in result.lower() or "success" in result.lower():
+                filter_status.css_classes = ["alert", "alert-success", "p-2", "m-2"]
+            elif "error" in result.lower():
+                filter_status.css_classes = ["alert", "alert-danger", "p-2", "m-2"]
+            else:
+                filter_status.css_classes = ["alert", "alert-info", "p-2", "m-2"]
+            filter_status.object = result
+        
+        def reset_filter_callback(event):
+            filter_query.value = ""
+            result = self.apply_global_filter("")
+            filter_status.css_classes = ["alert", "alert-success", "p-2", "m-2"]
             filter_status.object = result
         
         filter_button.on_click(apply_filter_callback)
+        reset_button.on_click(reset_filter_callback)
         # --- End filter components ---
 
-        layout = pn.Column(
-            pn.pane.Markdown("# Patch-seq Ephys Data Explorer\n"),
-            # Add global filter UI
-            pn.Row(
+        # Build the filter panel
+        filter_panel = pn.Column(
+            pn.pane.Markdown("### Global Filter", css_classes=["card-title"]),
+            pn.pane.Markdown(
+                """
+                    Enter a pandas query to filter cells. Examples:
+                    - `` `gene_Dbh (log_normed)` > 0 and `gene_Th (log_normed)` > 0 ``
+                    - `` `LC_targeting` == "genotype" ``
+                    """
+            ),
+            pn.Column(
+                filter_query,
+                pn.Row(filter_button, reset_button),
+            ),
+            filter_status,
+            width=600,
+            margin=(0, 100, 50, 0),  # top, right, bottom, left margins in pixels
+            css_classes=["card", "p-4", "m-4"],
+        )
+        
+        # Create the filtered count display
+        filtered_count = pn.bind(
+            lambda filtered_df: pn.pane.Markdown(
+                f"### Filtered cells: {len(filtered_df)} of {len(self.df_meta)} total",
+                css_classes=["alert", "alert-info", "p-2", "text-center"]
+            ),
+            filtered_df=self.data_holder.param.filtered_df_meta,
+        )
+            
+        # Create tabs for different sections
+        tabs = pn.Tabs(
+            ("Cell Explorer", 
                 pn.Column(
-                    pn.pane.Markdown("## Global Filter"),
+                    filtered_count,
+                    pane_cell_selector,
+                )
+            ),
+            ("Spike Analysis", 
+                pn.Card(
+                    pn.Row(
+                        pn.Column(
+                            pn.pane.Markdown("### Controls", css_classes=["card-title"]), 
+                            *spike_controls.values(), 
+                            width=250
+                        ),
+                        pn.Column(spike_plots)
+                    ),
+                    title="Raw Spike Analysis",
+                    collapsed=False,
+                )
+            ),
+            ("Raw Sweeps", 
+                pn.Column(
+                    show_sweeps_button,
                     pn.pane.Markdown(
-                        """
-                        Enter a pandas query to filter cells. Examples:
-                        
-                        - `` `gene_Dbh (log_normed)` > 0 and `gene_Th (log_normed)` > 0 ``
-                        - `` `LC_targeting` == "genotype" ``
-                        
-                        Leave blank to reset.
-                        """
+                        "### Select a cell from the Cell Explorer tab to view its raw sweeps",
+                        css_classes=["alert", "alert-info", "p-2"]
                     ),
-                    width=500,
-                ),
-                pn.Column(
-                    filter_query,
-                    filter_button,
-                    filter_status,
-                    width=600,
-                ),
+                    dynamic_content
+                )
             ),
-            pn.Column(
-                pn.bind(
-                    lambda filtered_df: pn.pane.Markdown(
-                        f"## Filtered cells (N = {len(filtered_df)})"
-                    ),
-                    filtered_df=self.data_holder.param.filtered_df_meta,
-                ),
-            ),
-            pane_cell_selector,
-            pn.layout.Divider(),
-            pn.Column(
-                pn.pane.Markdown("## Raw Spikes"),
-                pn.Row(
-                    pn.Column(*spike_controls.values(), width=250),
-                    spike_plots,
-                ),
-            ),
-            pn.layout.Divider(),
-            show_sweeps_button,
-            dynamic_content,
-            pn.layout.Divider(),
-            pn.Accordion(
-                (
-                    "Distribution of all features",
+            ("Feature Distribution", 
+                pn.Card(
                     pn.pane.PNG(
                         S3_PUBLIC_URL_BASE + "/efel/cell_stats/distribution_all_features.png",
                         width=1300,
                     ),
-                ),
+                    title="Distribution of all features",
+                    collapsed=False,
+                )
             ),
-            margin=(20, 20, 0, 20),  # top, right, bottom, left margins in pixels
+            dynamic=True  # Allow dynamic updates to tab content
         )
-        return layout
+            
+        # Create the template
+        template = pn.template.BootstrapTemplate(
+            title="LC-NE Patch-seq Data Explorer",
+            header_background="#0072B5",  # Allen Institute blue
+            favicon="https://alleninstitute.org/wp-content/uploads/2021/10/cropped-favicon-32x32.png",
+            main=[
+                #pn.pane.Markdown("# Patch-seq Ephys Data Explorer", css_classes=["display-4"]),
+                #pn.layout.Divider(),
+                pn.Row(
+                    filter_panel,
+                    s3_cell_summary_plot
+                    ),
+                tabs,
+            ],
+            sidebar=[
+                pn.pane.Markdown("### Filtered Cells"),
+                pn.bind(
+                    lambda filtered_df: pn.pane.Markdown(
+                        f"**{len(filtered_df)} of {len(self.df_meta)} total**",
+                        css_classes=["alert", "alert-info", "p-2"]
+                    ),
+                    filtered_df=self.data_holder.param.filtered_df_meta,
+                ),
+                pn.pane.Markdown("### Selected Cell"),
+                pn.bind(
+                    lambda id: pn.pane.Markdown(
+                        f"**Cell ID:** {id}" if id else "No cell selected",
+                        css_classes=["alert", "alert-secondary", "p-2"]
+                    ),
+                    id=self.data_holder.param.ephys_roi_id_selected
+                ),
+                pn.bind(
+                    lambda id: pn.pane.Markdown(
+                        f"**Sweep:** {id}" if id else "",
+                        css_classes=["alert", "alert-secondary", "p-2"]
+                    ),
+                    id=self.data_holder.param.sweep_number_selected
+                ),
+            ],
+            theme="default",
+        )
+        template.sidebar_width = 200
+        return template
 
 
 app = PatchSeqNWBApp()
