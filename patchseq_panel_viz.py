@@ -225,6 +225,7 @@ class PatchSeqNWBApp(param.Parameterized):
             controls["show_gmm"].param.value,
             controls["n_components_x"].param.value,
             controls["n_components_y"].param.value,
+            controls["show_linear_fit"].param.value,
             df_meta=self.data_holder.param.filtered_df_meta,
         )
 
@@ -244,6 +245,7 @@ class PatchSeqNWBApp(param.Parameterized):
                 controls["show_gmm"],
                 controls["n_components_x"],
                 controls["n_components_y"],
+                controls["show_linear_fit"],
                 pn.layout.Divider(margin=(5, 0, 5, 0)),
                 pn.Accordion(
                     (
