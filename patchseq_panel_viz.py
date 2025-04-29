@@ -649,8 +649,9 @@ class PatchSeqNWBApp(param.Parameterized):
                     pn.pane.Markdown(
                         """
                         Enter a pandas query to filter cells. Examples:
-                        - `gene_Dbh (log_normed)` > 0 and `gene_Th (log_normed)` > 0
-                        - `LC_targeting` == "genotype"
+                        
+                        - `` `gene_Dbh (log_normed)` > 0 and `gene_Th (log_normed)` > 0 ``
+                        - `` `LC_targeting` == "genotype" ``
                         
                         Leave blank to reset.
                         """
