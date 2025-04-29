@@ -201,10 +201,10 @@ class PatchSeqNWBApp(param.Parameterized):
         """
         Create the scatter plot panel using the ScatterPlot component.
         """
-        control_width = 300
 
         # Get plot controls from the scatter plot component
-        controls = self.scatter_plot.create_plot_controls(width=control_width)
+        controls = self.scatter_plot.controls
+        control_width = 300
 
         # Create a reactive scatter plot that updates when controls change
         scatter_plot = pn.bind(
@@ -225,6 +225,7 @@ class PatchSeqNWBApp(param.Parameterized):
             controls["show_gmm"].param.value,
             controls["n_components_x"].param.value,
             controls["n_components_y"].param.value,
+            controls["show_linear_fit"].param.value,
             df_meta=self.data_holder.param.filtered_df_meta,
         )
 
@@ -244,6 +245,7 @@ class PatchSeqNWBApp(param.Parameterized):
                 controls["show_gmm"],
                 controls["n_components_x"],
                 controls["n_components_y"],
+                controls["show_linear_fit"],
                 pn.layout.Divider(margin=(5, 0, 5, 0)),
                 pn.Accordion(
                     (

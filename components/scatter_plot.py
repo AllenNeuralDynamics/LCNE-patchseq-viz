@@ -9,8 +9,9 @@ import numpy as np
 import pandas as pd
 import panel as pn
 from bokeh.layouts import gridplot
-from bokeh.models import BoxZoomTool, ColumnDataSource, DatetimeTickFormatter, HoverTool
+from bokeh.models import BoxZoomTool, ColumnDataSource, DatetimeTickFormatter, HoverTool, Legend
 from bokeh.plotting import figure
+from scipy import stats
 from sklearn.metrics import silhouette_score
 from sklearn.mixture import GaussianMixture
 
@@ -47,6 +48,7 @@ class ScatterPlot:
         self.data_holder = data_holder
         # Add cell summary URLs to dataframe
         self._add_cell_summary_urls()
+        self.controls = self.create_plot_controls(width=300)
 
     def _add_cell_summary_urls(self):
         """Add cell summary URLs to the dataframe."""
@@ -159,6 +161,11 @@ class ScatterPlot:
             ),
             "show_gmm": pn.widgets.Checkbox(
                 name="Show Gaussian Mixture Model",
+                value=True,
+                sizing_mode="stretch_width",
+            ),
+            "show_linear_fit": pn.widgets.Checkbox(
+                name="Show Linear Fit",
                 value=True,
                 sizing_mode="stretch_width",
             ),
@@ -387,6 +394,7 @@ class ScatterPlot:
         show_gmm: bool = False,
         n_components_x: int = 2,
         n_components_y: int = 1,
+        show_linear_fit: bool = True,
         df_meta: pd.DataFrame = None,
     ) -> gridplot:
         """Update the scatter plot with new parameters."""
@@ -435,7 +443,37 @@ class ScatterPlot:
         )
 
         # Add scatter glyph using the data source
-        p.scatter(x=x_col, y=y_col, source=source, size=size, color=color, alpha=alpha)
+        scatter = p.scatter(x=x_col, y=y_col, source=source, size=size, color=color, alpha=alpha)
+
+        # Add linear regression if requested and both columns are numeric
+        if show_linear_fit and x_col != "Date" and x_col != "None" and y_col != "None":
+            # Get clean numeric data
+            # Convert to numeric and drop rows where either x or y is NA
+            df_clean = df_to_use[[x_col, y_col]].apply(pd.to_numeric, errors='coerce').dropna()
+            x_data = df_clean[x_col]
+            y_data = df_clean[y_col]
+            
+            # Only proceed if we have valid data
+            if not x_data.empty and not y_data.empty:
+                # Perform linear regression
+                slope, intercept, r_value, p_value, std_err = stats.linregress(x_data, y_data)
+                
+                # Calculate fitted line points
+                x_min, x_max = x_data.min(), x_data.max()
+                x_fit = np.array([x_min, x_max])
+                y_fit = slope * x_fit + intercept
+                
+                # Add fitted line
+                line = p.line(x_fit, y_fit, line_color="black", line_width=2, line_dash="dashed")
+                
+                # Add legend with R² and p-value
+                legend_items = [
+                    ("Linear Fit", [line]),
+                    (f"R² = {r_value**2:.3f}", []),
+                    (f"p = {p_value:.3e}", [])
+                ]
+                legend = Legend(items=legend_items, location="top_left")
+                p.add_layout(legend)
 
         # Flip the y-axis if y_col is depth
         if y_col == "Y (D --> V)":
