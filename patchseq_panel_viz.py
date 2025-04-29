@@ -201,10 +201,10 @@ class PatchSeqNWBApp(param.Parameterized):
         """
         Create the scatter plot panel using the ScatterPlot component.
         """
-        control_width = 300
 
         # Get plot controls from the scatter plot component
-        controls = self.scatter_plot.create_plot_controls(width=control_width)
+        controls = self.scatter_plot.controls
+        control_width = 300
 
         # Create a reactive scatter plot that updates when controls change
         scatter_plot = pn.bind(

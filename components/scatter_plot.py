@@ -48,6 +48,7 @@ class ScatterPlot:
         self.data_holder = data_holder
         # Add cell summary URLs to dataframe
         self._add_cell_summary_urls()
+        self.controls = self.create_plot_controls(width=300)
 
     def _add_cell_summary_urls(self):
         """Add cell summary URLs to the dataframe."""
