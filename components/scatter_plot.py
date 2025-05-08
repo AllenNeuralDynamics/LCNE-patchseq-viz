@@ -464,15 +464,20 @@ class ScatterPlot:
                 y_fit = slope * x_fit + intercept
                 
                 # Add fitted line
-                line = p.line(x_fit, y_fit, line_color="black", line_width=2, line_dash="dashed")
+                setting = {"line_width": 3, "line_dash": "solid"} if p_value < 0.05 else {
+                    "line_width": 2, "line_dash": "dashed"}
+                line = p.line(x_fit, y_fit, line_color="black", 
+                              **setting)
                 
                 # Add legend with R² and p-value
                 legend_items = [
-                    ("Linear Fit", [line]),
-                    (f"R² = {r_value**2:.3f}", []),
-                    (f"p = {p_value:.3e}", [])
+                    (f"Linear Fit (p = {p_value:.3e}, R² = {r_value**2:.3f})", [line]),
                 ]
-                legend = Legend(items=legend_items, location="top_left")
+                legend = Legend(
+                    items=legend_items, 
+                    location="top_left",
+                    label_text_font_size=f"{font_size-2}pt"
+                )
                 p.add_layout(legend)
 
         # Flip the y-axis if y_col is depth
