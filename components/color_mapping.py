@@ -70,8 +70,8 @@ class ColorMapping:
 
             return {"field": color_mapping, "transform": color_mapper}
 
-        # If categorical (nunique <= 10), use categorical color mapper
-        if self.df_meta[color_mapping].nunique() <= 10:
+        # If categorical (nunique <= 50), use categorical color mapper
+        if self.df_meta[color_mapping].nunique() <= 50:
             n_categories = self.df_meta[color_mapping].nunique()
 
             # Check if the provided color_palette is a string (name in all_palettes)
