@@ -119,7 +119,7 @@ class ColorMapping:
             # Map "None" or NaN factors to "gray"
             factors = list(self.df_meta[color_mapping].dropna().unique())
             categorical_palette = list(categorical_palette)
-            for missing in ["None", "unknown"]:
+            for missing in ["None", "unknown", "seq_data_not_available"]:
                 if missing in factors:
                     categorical_palette[factors.index(missing)] = "gray"
 
