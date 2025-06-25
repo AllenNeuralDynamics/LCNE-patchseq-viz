@@ -21,6 +21,109 @@ from LCNE_patchseq_analysis import REGION_COLOR_MAPPER
 from LCNE_patchseq_analysis.pipeline_util.s3 import get_public_representative_spikes
 
 
+def normalize_data(x, idx_range_to_norm=None):
+    """Normalize data within a specified range."""
+    x0 = x if idx_range_to_norm is None else x[:, idx_range_to_norm]
+    min_vals = np.min(x0, axis=1, keepdims=True)
+    range_vals = np.ptp(x0, axis=1, keepdims=True)
+    return (x - min_vals) / range_vals
+
+
+def extract_representative_spikes(
+    df_spikes: pd.DataFrame,
+    extract_from,
+    if_normalize_v: bool = True,
+    normalize_window_v: tuple = (-2, 4),
+    if_normalize_dvdt: bool = True,
+    normalize_window_dvdt: tuple = (-2, 0),
+    if_smooth_dvdt: bool = True,
+    filtered_df_meta: pd.DataFrame = None,
+):
+    """Extract and process representative spike waveforms.
+    
+    Parameters:
+    -----------
+    df_spikes : pd.DataFrame
+        DataFrame containing spike waveform data
+    extract_from : str
+        Source to extract spikes from
+    if_normalize_v : bool, default=True
+        Whether to normalize voltage traces
+    normalize_window_v : tuple, default=(-2, 4)
+        Time window for voltage normalization
+    if_normalize_dvdt : bool, default=True
+        Whether to normalize dV/dt traces
+    normalize_window_dvdt : tuple, default=(-2, 0)
+        Time window for dV/dt normalization
+    if_smooth_dvdt : bool, default=True
+        Whether to smooth dV/dt traces
+    filtered_df_meta : pd.DataFrame, optional
+        Metadata filter to apply
+        
+    Returns:
+    --------
+    tuple
+        (df_v_norm, df_dvdt_norm) - normalized voltage and dV/dt DataFrames
+    """
+    # Get the waveforms
+    df_waveforms = df_spikes.query("extract_from == @extract_from")
+    
+    # Filter by filtered_df_meta
+    if filtered_df_meta is not None:
+        df_waveforms = df_waveforms.query(
+            "ephys_roi_id in @filtered_df_meta.ephys_roi_id.values"
+        )
+
+    if len(df_waveforms) == 0:
+        raise ValueError(f"No waveforms found for extract_from={extract_from}")
+
+    t = df_waveforms.columns.values.T
+    v = df_waveforms.values
+    dvdt = np.gradient(v, t, axis=1)
+
+    # Normalize the dvdt
+    if if_normalize_dvdt:
+        dvdt = normalize_data(
+            dvdt,
+            idx_range_to_norm=np.where(
+                (t >= normalize_window_dvdt[0]) & (t <= normalize_window_dvdt[1])
+            )[0],
+        )
+
+    if if_smooth_dvdt:
+        dvdt = savgol_filter(dvdt, window_length=5, polyorder=3, axis=1)
+
+    dvdt_max_idx = np.argmax(dvdt, axis=1)
+    max_shift_right = dvdt_max_idx.max() - dvdt_max_idx.min()
+
+    # Calculate new time array that spans all possible shifts
+    dt = t[1] - t[0]
+    t_dvdt = -dvdt_max_idx.max() * dt + np.arange(len(t) + max_shift_right) * dt
+
+    # Create new dvdt array with NaN padding
+    new_dvdt = np.full((dvdt.shape[0], len(t_dvdt)), np.nan)
+
+    # For each cell, place its dvdt trace in the correct position
+    for i, (row, peak_idx) in enumerate(zip(dvdt, dvdt_max_idx)):
+        start_idx = dvdt_max_idx.max() - peak_idx  # Align the max_index
+        new_dvdt[i, start_idx : start_idx + len(row)] = row
+
+    # Normalize the v
+    if if_normalize_v:
+        idx_range_to_norm = np.where(
+            (t >= normalize_window_v[0]) & (t <= normalize_window_v[1])
+        )[0]
+        v = normalize_data(v, idx_range_to_norm)
+
+    # Create dictionary with ephys_roi_id as keys
+    df_v_norm = pd.DataFrame(v, index=df_waveforms.index.get_level_values(0), columns=t)
+    df_dvdt_norm = pd.DataFrame(
+        new_dvdt, index=df_waveforms.index.get_level_values(0), columns=t_dvdt
+    )
+
+    return df_v_norm, df_dvdt_norm
+
+
 class RawSpikeAnalysis:
     """Handles spike waveform analysis and visualization."""
 
@@ -32,85 +135,6 @@ class RawSpikeAnalysis:
         # Load extracted raw spike data
         self.df_spikes = get_public_representative_spikes()
         self.extract_from_options = self.df_spikes.index.get_level_values(1).unique()
-
-    def _normalize(self, x, idx_range_to_norm=None):
-        """Normalize data within a specified range."""
-        x0 = x if idx_range_to_norm is None else x[:, idx_range_to_norm]
-        min_vals = np.min(x0, axis=1, keepdims=True)
-        range_vals = np.ptp(x0, axis=1, keepdims=True)
-        return (x - min_vals) / range_vals
-
-    def extract_representative_spikes(
-        self,
-        extract_from,
-        if_normalize_v: bool = True,
-        normalize_window_v: tuple = (-2, 4),
-        if_normalize_dvdt: bool = True,
-        normalize_window_dvdt: tuple = (-2, 0),
-        if_smooth_dvdt: bool = True,
-        filtered_df_meta: pd.DataFrame = None,
-    ):
-        """Extract and process representative spike waveforms."""
-        # Get the waveforms
-        df_waveforms = self.df_spikes.query("extract_from == @extract_from")
-        
-        # Filter by filtered_df_meta
-        if filtered_df_meta is not None:
-            df_waveforms = df_waveforms.query(
-                "ephys_roi_id in @filtered_df_meta.ephys_roi_id.values"
-            )
-
-        if len(df_waveforms) == 0:
-            raise ValueError(f"No waveforms found for extract_from={extract_from}")
-
-        t = df_waveforms.columns.values.T
-        v = df_waveforms.values
-        dvdt = np.gradient(v, t, axis=1)
-
-        # Normalize the dvdt
-        if if_normalize_dvdt:
-            dvdt = self._normalize(
-                dvdt,
-                idx_range_to_norm=np.where(
-                    (t >= normalize_window_dvdt[0]) & (t <= normalize_window_dvdt[1])
-                )[0],
-            )
-
-        if if_smooth_dvdt:
-            dvdt = savgol_filter(dvdt, window_length=5, polyorder=3, axis=1)
-
-        dvdt_max_idx = np.argmax(dvdt, axis=1)
-        max_shift_right = dvdt_max_idx.max() - dvdt_max_idx.min()
-
-        # Calculate new time array that spans all possible shifts
-        dt = t[1] - t[0]
-        t_dvdt = -dvdt_max_idx.max() * dt + np.arange(len(t) + max_shift_right) * dt
-
-        # Create new dvdt array with NaN padding
-        new_dvdt = np.full((dvdt.shape[0], len(t_dvdt)), np.nan)
-
-        # For each cell, place its dvdt trace in the correct position
-        for i, (row, peak_idx) in enumerate(zip(dvdt, dvdt_max_idx)):
-            start_idx = dvdt_max_idx.max() - peak_idx  # Align the max_index
-            new_dvdt[i, start_idx : start_idx + len(row)] = row
-
-        # Normalize the v
-        if if_normalize_v:
-            idx_range_to_norm = np.where(
-                (t >= normalize_window_v[0]) & (t <= normalize_window_v[1])
-            )[0]
-            v = self._normalize(v, idx_range_to_norm)
-
-        self.normalize_window_v = normalize_window_v
-        self.normalize_window_dvdt = normalize_window_dvdt
-
-        # Create dictionary with ephys_roi_id as keys
-        df_v_norm = pd.DataFrame(v, index=df_waveforms.index.get_level_values(0), columns=t)
-        df_dvdt_norm = pd.DataFrame(
-            new_dvdt, index=df_waveforms.index.get_level_values(0), columns=t_dvdt
-        )
-
-        return df_v_norm, df_dvdt_norm
 
     def create_plot_controls(self) -> dict:
         """Create control widgets for spike analysis."""
