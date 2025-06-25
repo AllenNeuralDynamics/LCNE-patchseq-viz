@@ -23,6 +23,7 @@ from LCNE_patchseq_analysis.data_util.metadata import load_ephys_metadata
 from LCNE_patchseq_analysis.data_util.nwb import PatchSeqNWB
 from LCNE_patchseq_analysis.panel_app.components.scatter_plot import ScatterPlot
 from LCNE_patchseq_analysis.panel_app.components.spike_analysis import RawSpikeAnalysis
+from LCNE_patchseq_analysis.population_analysis.spikes import extract_representative_spikes
 from LCNE_patchseq_analysis.pipeline_util.s3 import (
     S3_PUBLIC_URL_BASE,
     get_public_url_cell_summary,
@@ -511,7 +512,8 @@ class PatchSeqNWBApp(param.Parameterized):
             filtered_df_meta=None,
         ):
             # Extract representative spikes
-            df_v_norm, df_dvdt_norm = self.raw_spike_analysis.extract_representative_spikes(
+            df_v_norm, df_dvdt_norm = extract_representative_spikes(
+                df_spikes=self.raw_spike_analysis.df_spikes,
                 extract_from=extract_from,
                 if_normalize_v=True,
                 normalize_window_v=normalize_window_v,
@@ -534,6 +536,8 @@ class PatchSeqNWBApp(param.Parameterized):
                 spike_range=spike_range,
                 dim_reduction_method=dim_reduction_method,
                 font_size=font_size,
+                normalize_window_v=normalize_window_v,
+                normalize_window_dvdt=normalize_window_dvdt,
             )
 
         # Create spike analysis plots

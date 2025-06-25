@@ -18,110 +18,11 @@ from sklearn.metrics import silhouette_score
 from umap import UMAP
 
 from LCNE_patchseq_analysis import REGION_COLOR_MAPPER
+from LCNE_patchseq_analysis.population_analysis.spikes import (
+    normalize_data,
+    extract_representative_spikes,
+)
 from LCNE_patchseq_analysis.pipeline_util.s3 import get_public_representative_spikes
-
-
-def normalize_data(x, idx_range_to_norm=None):
-    """Normalize data within a specified range."""
-    x0 = x if idx_range_to_norm is None else x[:, idx_range_to_norm]
-    min_vals = np.min(x0, axis=1, keepdims=True)
-    range_vals = np.ptp(x0, axis=1, keepdims=True)
-    return (x - min_vals) / range_vals
-
-
-def extract_representative_spikes(
-    df_spikes: pd.DataFrame,
-    extract_from,
-    if_normalize_v: bool = True,
-    normalize_window_v: tuple = (-2, 4),
-    if_normalize_dvdt: bool = True,
-    normalize_window_dvdt: tuple = (-2, 0),
-    if_smooth_dvdt: bool = True,
-    filtered_df_meta: pd.DataFrame = None,
-):
-    """Extract and process representative spike waveforms.
-    
-    Parameters:
-    -----------
-    df_spikes : pd.DataFrame
-        DataFrame containing spike waveform data
-    extract_from : str
-        Source to extract spikes from
-    if_normalize_v : bool, default=True
-        Whether to normalize voltage traces
-    normalize_window_v : tuple, default=(-2, 4)
-        Time window for voltage normalization
-    if_normalize_dvdt : bool, default=True
-        Whether to normalize dV/dt traces
-    normalize_window_dvdt : tuple, default=(-2, 0)
-        Time window for dV/dt normalization
-    if_smooth_dvdt : bool, default=True
-        Whether to smooth dV/dt traces
-    filtered_df_meta : pd.DataFrame, optional
-        Metadata filter to apply
-        
-    Returns:
-    --------
-    tuple
-        (df_v_norm, df_dvdt_norm) - normalized voltage and dV/dt DataFrames
-    """
-    # Get the waveforms
-    df_waveforms = df_spikes.query("extract_from == @extract_from")
-    
-    # Filter by filtered_df_meta
-    if filtered_df_meta is not None:
-        df_waveforms = df_waveforms.query(
-            "ephys_roi_id in @filtered_df_meta.ephys_roi_id.values"
-        )
-
-    if len(df_waveforms) == 0:
-        raise ValueError(f"No waveforms found for extract_from={extract_from}")
-
-    t = df_waveforms.columns.values.T
-    v = df_waveforms.values
-    dvdt = np.gradient(v, t, axis=1)
-
-    # Normalize the dvdt
-    if if_normalize_dvdt:
-        dvdt = normalize_data(
-            dvdt,
-            idx_range_to_norm=np.where(
-                (t >= normalize_window_dvdt[0]) & (t <= normalize_window_dvdt[1])
-            )[0],
-        )
-
-    if if_smooth_dvdt:
-        dvdt = savgol_filter(dvdt, window_length=5, polyorder=3, axis=1)
-
-    dvdt_max_idx = np.argmax(dvdt, axis=1)
-    max_shift_right = dvdt_max_idx.max() - dvdt_max_idx.min()
-
-    # Calculate new time array that spans all possible shifts
-    dt = t[1] - t[0]
-    t_dvdt = -dvdt_max_idx.max() * dt + np.arange(len(t) + max_shift_right) * dt
-
-    # Create new dvdt array with NaN padding
-    new_dvdt = np.full((dvdt.shape[0], len(t_dvdt)), np.nan)
-
-    # For each cell, place its dvdt trace in the correct position
-    for i, (row, peak_idx) in enumerate(zip(dvdt, dvdt_max_idx)):
-        start_idx = dvdt_max_idx.max() - peak_idx  # Align the max_index
-        new_dvdt[i, start_idx : start_idx + len(row)] = row
-
-    # Normalize the v
-    if if_normalize_v:
-        idx_range_to_norm = np.where(
-            (t >= normalize_window_v[0]) & (t <= normalize_window_v[1])
-        )[0]
-        v = normalize_data(v, idx_range_to_norm)
-
-    # Create dictionary with ephys_roi_id as keys
-    df_v_norm = pd.DataFrame(v, index=df_waveforms.index.get_level_values(0), columns=t)
-    df_dvdt_norm = pd.DataFrame(
-        new_dvdt, index=df_waveforms.index.get_level_values(0), columns=t_dvdt
-    )
-
-    return df_v_norm, df_dvdt_norm
 
 
 class RawSpikeAnalysis:
@@ -336,6 +237,8 @@ class RawSpikeAnalysis:
         if_show_cluster_on_retro: bool = True,
         spike_range: tuple = (-4, 7),
         dim_reduction_method: str = "PCA",
+        normalize_window_v: tuple = (-2, 4),
+        normalize_window_dvdt: tuple = (-2, 0),
             ) -> gridplot:
         """Create plots for spike analysis including dimensionality reduction and clustering."""
                 # Filter data based on spike_range
@@ -363,8 +266,8 @@ class RawSpikeAnalysis:
             **plot_settings,
         )
         p2 = figure(
-            title=f"Raw Vm, normalized between {self.normalize_window_v[0]} "
-            f"to {self.normalize_window_v[1]} ms",
+            title=f"Raw Vm, normalized between {normalize_window_v[0]} "
+            f"to {normalize_window_v[1]} ms",
             x_axis_label="Time (ms)",
             y_axis_label="V",
             x_range=(spike_range[0] - 0.1, spike_range[1] + 0.1),
@@ -372,8 +275,8 @@ class RawSpikeAnalysis:
             **plot_settings,
         )
         p3 = figure(
-            title=f"dV/dt, normalized betwen {self.normalize_window_dvdt[0]} "
-            f"to {self.normalize_window_dvdt[1]} ms",
+            title=f"dV/dt, normalized betwen {normalize_window_dvdt[0]} "
+            f"to {normalize_window_dvdt[1]} ms",
             x_axis_label="Time (ms)",
             y_axis_label="dV/dt",
             x_range=(spike_range[0] - 0.1, spike_range[1] + 0.1),
@@ -456,7 +359,7 @@ class RawSpikeAnalysis:
         # Add vertical lines for normalization windows
         p2.add_layout(
             Span(
-                location=self.normalize_window_v[0],
+                location=normalize_window_v[0],
                 dimension="height",
                 line_color="blue",
                 line_dash="dashed",
@@ -465,7 +368,7 @@ class RawSpikeAnalysis:
         )
         p2.add_layout(
             Span(
-                location=self.normalize_window_v[1],
+                location=normalize_window_v[1],
                 dimension="height",
                 line_color="blue",
                 line_dash="dashed",
@@ -474,7 +377,7 @@ class RawSpikeAnalysis:
         )
         p3.add_layout(
             Span(
-                location=self.normalize_window_dvdt[0],
+                location=normalize_window_dvdt[0],
                 dimension="height",
                 line_color="blue",
                 line_dash="dashed",
@@ -483,7 +386,7 @@ class RawSpikeAnalysis:
         )
         p3.add_layout(
             Span(
-                location=self.normalize_window_dvdt[1],
+                location=normalize_window_dvdt[1],
                 dimension="height",
                 line_color="blue",
                 line_dash="dashed",
