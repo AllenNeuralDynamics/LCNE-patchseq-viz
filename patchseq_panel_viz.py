@@ -7,7 +7,6 @@ panel serve panel_nwb_viz.py --dev --allow-websocket-origin=codeocean.allenneura
 
 import logging
 
-from numpy import ma
 import pandas as pd
 import panel as pn
 import param
@@ -17,7 +16,6 @@ from bokeh.models import (
     BoxZoomTool,
 )
 from bokeh.plotting import figure
-from pyconify import css
 
 from LCNE_patchseq_analysis.data_util.metadata import load_ephys_metadata
 from LCNE_patchseq_analysis.data_util.nwb import PatchSeqNWB
@@ -29,6 +27,7 @@ from LCNE_patchseq_analysis.pipeline_util.s3 import (
     get_public_url_sweep,
     load_efel_features_from_roi,
 )
+from LCNE_patchseq_analysis.population_analysis.spikes import extract_representative_spikes
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -61,7 +60,7 @@ class PatchSeqNWBApp(param.Parameterized):
         self.data_holder = PatchSeqNWBApp.DataHolder()
 
         # Load and prepare metadata.
-        self.df_meta = load_ephys_metadata(if_from_s3=True, if_with_seq=True)        
+        self.df_meta = load_ephys_metadata(if_from_s3=True, if_with_seq=True)
         self.df_meta.rename(
             columns={
                 "x": "X (A --> P)",
@@ -93,10 +92,9 @@ class PatchSeqNWBApp(param.Parameterized):
 
         # Initialize spike analysis component
         self.raw_spike_analysis = RawSpikeAnalysis(self.df_meta, main_app=self)
-        
+
         # Create a copy for filtering - this will be updated by the global filter
         self.data_holder.filtered_df_meta = self.df_meta.copy()
-
 
     @staticmethod
     def update_bokeh(raw, sweep, downsample_factor=3):
@@ -171,10 +169,10 @@ class PatchSeqNWBApp(param.Parameterized):
     def apply_global_filter(self, query_string):
         """
         Apply a query filter to the metadata DataFrame.
-        
+
         Args:
             query_string: A string in pandas query format to filter the metadata
-        
+
         Returns:
             Filtered DataFrame
         """
@@ -182,17 +180,17 @@ class PatchSeqNWBApp(param.Parameterized):
             # If query is empty, reset to the full dataset
             self.data_holder.filtered_df_meta = self.df_meta.copy()
             return f"Reset to full dataset (N={len(self.data_holder.filtered_df_meta)})"
-        
+
         try:
             # Apply the filter query
             filtered = self.df_meta.query(query_string)
             if len(filtered) == 0:
-                return f"Query returned 0 results. Filter not applied."
-            
+                return "Query returned 0 results. Filter not applied."
+
             # Update the filtered dataframe in the data_holder
             # This will trigger updates in any components bound to this parameter
             self.data_holder.filtered_df_meta = filtered
-            
+
             return f"Query applied. {len(filtered)} records match (out of {len(self.df_meta)})."
         except Exception as e:
             return f"Error in query: {str(e)}"
@@ -281,9 +279,9 @@ class PatchSeqNWBApp(param.Parameterized):
             name="Add more columns to show in the table",
             options=selectable_cols,
             value=[
-                "width_rheo",
+                "ipfx_width_rheo",
                 "efel_AP_width @ long_square_rheo, aver",
-                "sag",
+                "ipfx_sag",
                 "efel_sag_ratio1 @ subthreshold, aver",
             ],  # start with no additional columns
             height=300,
@@ -485,7 +483,7 @@ class PatchSeqNWBApp(param.Parameterized):
         Constructs the full application layout with Bootstrap template.
         """
         pn.config.throttled = False
-        
+
         # Create and bind the cell selector panel to filtered metadata
         pane_cell_selector = pn.bind(
             self.create_cell_selector_panel,
@@ -511,7 +509,8 @@ class PatchSeqNWBApp(param.Parameterized):
             filtered_df_meta=None,
         ):
             # Extract representative spikes
-            df_v_norm, df_dvdt_norm = self.raw_spike_analysis.extract_representative_spikes(
+            df_v_norm, df_dvdt_norm = extract_representative_spikes(
+                df_spikes=self.raw_spike_analysis.df_spikes,
                 extract_from=extract_from,
                 if_normalize_v=True,
                 normalize_window_v=normalize_window_v,
@@ -534,6 +533,8 @@ class PatchSeqNWBApp(param.Parameterized):
                 spike_range=spike_range,
                 dim_reduction_method=dim_reduction_method,
                 font_size=font_size,
+                normalize_window_v=normalize_window_v,
+                normalize_window_dvdt=normalize_window_dvdt,
             )
 
         # Create spike analysis plots
@@ -607,9 +608,7 @@ class PatchSeqNWBApp(param.Parameterized):
 
         # Create a toggle button for showing/hiding raw sweeps
         show_sweeps_button = pn.widgets.Button(
-            name="Show raw sweeps", 
-            button_type="primary",
-            width=200
+            name="Show raw sweeps", button_type="primary", width=200
         )
         show_sweeps = pn.widgets.Toggle(name="Show raw sweeps", value=False)
 
@@ -627,26 +626,26 @@ class PatchSeqNWBApp(param.Parameterized):
 
         # --- Connect global filter components ---
         filter_query = pn.widgets.TextAreaInput(
-            name="Query string", 
+            name="Query string",
             placeholder="Enter a pandas query string",
             sizing_mode="stretch_width",
             height=100,
         )
-        
+
         filter_button = pn.widgets.Button(
-            name="Apply filter", 
+            name="Apply filter",
             button_type="primary",
             width=150,
         )
-        
+
         reset_button = pn.widgets.Button(
-            name="Reset filter", 
+            name="Reset filter",
             button_type="light",
             width=150,
         )
-        
+
         filter_status = pn.pane.Markdown("", css_classes=["alert", "p-2", "m-2"])
-        
+
         # Connect the button to the filter function
         def apply_filter_callback(event):
             result = self.apply_global_filter(filter_query.value)
@@ -657,13 +656,13 @@ class PatchSeqNWBApp(param.Parameterized):
             else:
                 filter_status.css_classes = ["alert", "alert-info", "p-2", "m-2"]
             filter_status.object = result
-        
+
         def reset_filter_callback(event):
             filter_query.value = ""
             result = self.apply_global_filter("")
             filter_status.css_classes = ["alert", "alert-success", "p-2", "m-2"]
             filter_status.object = result
-        
+
         filter_button.on_click(apply_filter_callback)
         reset_button.on_click(reset_filter_callback)
         # --- End filter components ---
@@ -674,8 +673,10 @@ class PatchSeqNWBApp(param.Parameterized):
             pn.pane.Markdown(
                 """
                     Enter a pandas query to filter cells. Examples:
-                    - `` `X (A --> P)` > 9500 and `X (A --> P)` < 11500 and `Y (D --> V)` > 2500 and `Y (D --> V)` < 6000 ``
-                    - `` `gene_Dbh (log_normed)` > 0 or `gene_Th (log_normed)` > 0 or `gene_Slc18a2 (log_normed)` > 0 or `gene_Slc6a2 (log_normed)` > 0 ``
+                    - `` `X (A --> P)` > 9500 and `X (A --> P)` < 11500 and
+                         `Y (D --> V)` > 2500 and `Y (D --> V)` < 6000 ``
+                    - `` `gene_Dbh (log_normed)` > 0 or `gene_Th (log_normed)` > 0 or
+                         `gene_Slc18a2 (log_normed)` > 0 or `gene_Slc6a2 (log_normed)` > 0 ``
                     - `` `gene_Dbh (log_normed)` > 0 and `gene_Th (log_normed)` > 0 ``
                     - `` `LC_targeting` == "genotype" ``
                     """
@@ -689,49 +690,53 @@ class PatchSeqNWBApp(param.Parameterized):
             margin=(0, 100, 50, 0),  # top, right, bottom, left margins in pixels
             css_classes=["card", "p-4", "m-4"],
         )
-        
+
         # Create the filtered count display
         filtered_count = pn.bind(
             lambda filtered_df: pn.pane.Markdown(
                 f"### Filtered cells: {len(filtered_df)} of {len(self.df_meta)} total",
-                css_classes=["alert", "alert-info", "p-2", "text-center"]
+                css_classes=["alert", "alert-info", "p-2", "text-center"],
             ),
             filtered_df=self.data_holder.param.filtered_df_meta,
         )
-            
+
         # Create tabs for different sections
         tabs = pn.Tabs(
-            ("Cell Explorer", 
+            (
+                "Cell Explorer",
                 pn.Column(
                     filtered_count,
                     pane_cell_selector,
-                )
+                ),
             ),
-            ("Spike Analysis", 
+            (
+                "Spike Analysis",
                 pn.Card(
                     pn.Row(
                         pn.Column(
-                            pn.pane.Markdown("### Controls", css_classes=["card-title"]), 
-                            *spike_controls.values(), 
-                            width=250
+                            pn.pane.Markdown("### Controls", css_classes=["card-title"]),
+                            *spike_controls.values(),
+                            width=250,
                         ),
-                        pn.Column(spike_plots)
+                        pn.Column(spike_plots),
                     ),
                     title="Raw Spike Analysis",
                     collapsed=False,
-                )
+                ),
             ),
-            ("Raw Sweeps", 
+            (
+                "Raw Sweeps",
                 pn.Column(
                     show_sweeps_button,
                     pn.pane.Markdown(
                         "### Select a cell from the Cell Explorer tab to view its raw sweeps",
-                        css_classes=["alert", "alert-info", "p-2"]
+                        css_classes=["alert", "alert-info", "p-2"],
                     ),
-                    dynamic_content
-                )
+                    dynamic_content,
+                ),
             ),
-            ("Feature Distribution", 
+            (
+                "Feature Distribution",
                 pn.Card(
                     pn.pane.PNG(
                         S3_PUBLIC_URL_BASE + "/efel/cell_stats/distribution_all_features.png",
@@ -739,23 +744,23 @@ class PatchSeqNWBApp(param.Parameterized):
                     ),
                     title="Distribution of all features",
                     collapsed=False,
-                )
+                ),
             ),
-            dynamic=True  # Allow dynamic updates to tab content
+            dynamic=True,  # Allow dynamic updates to tab content
         )
-            
+
         # Create the template
         template = pn.template.BootstrapTemplate(
             title="LC-NE Patch-seq Data Explorer",
             header_background="#0072B5",  # Allen Institute blue
-            favicon="https://alleninstitute.org/wp-content/uploads/2021/10/cropped-favicon-32x32.png",
+            favicon=(
+                "https://alleninstitute.org/wp-content/uploads/2021/10/"
+                "cropped-favicon-32x32.png"
+            ),
             main=[
-                #pn.pane.Markdown("# Patch-seq Ephys Data Explorer", css_classes=["display-4"]),
-                #pn.layout.Divider(),
-                pn.Row(
-                    filter_panel,
-                    s3_cell_summary_plot
-                    ),
+                # pn.pane.Markdown("# Patch-seq Ephys Data Explorer", css_classes=["display-4"]),
+                # pn.layout.Divider(),
+                pn.Row(filter_panel, s3_cell_summary_plot),
                 tabs,
             ],
             sidebar=[
@@ -763,7 +768,7 @@ class PatchSeqNWBApp(param.Parameterized):
                 pn.bind(
                     lambda filtered_df: pn.pane.Markdown(
                         f"**{len(filtered_df)} of {len(self.df_meta)} total**",
-                        css_classes=["alert", "alert-info", "p-2"]
+                        css_classes=["alert", "alert-info", "p-2"],
                     ),
                     filtered_df=self.data_holder.param.filtered_df_meta,
                 ),
@@ -771,16 +776,16 @@ class PatchSeqNWBApp(param.Parameterized):
                 pn.bind(
                     lambda id: pn.pane.Markdown(
                         f"**Cell ID:** {id}" if id else "No cell selected",
-                        css_classes=["alert", "alert-secondary", "p-2"]
+                        css_classes=["alert", "alert-secondary", "p-2"],
                     ),
-                    id=self.data_holder.param.ephys_roi_id_selected
+                    id=self.data_holder.param.ephys_roi_id_selected,
                 ),
                 pn.bind(
                     lambda id: pn.pane.Markdown(
                         f"**Sweep:** {id}" if id else "",
-                        css_classes=["alert", "alert-secondary", "p-2"]
+                        css_classes=["alert", "alert-secondary", "p-2"],
                     ),
-                    id=self.data_holder.param.sweep_number_selected
+                    id=self.data_holder.param.sweep_number_selected,
                 ),
             ],
             theme="default",
