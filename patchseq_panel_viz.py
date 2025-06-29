@@ -282,9 +282,9 @@ class PatchSeqNWBApp(param.Parameterized):
             name="Add more columns to show in the table",
             options=selectable_cols,
             value=[
-                "width_rheo",
+                "ipfx_width_rheo",
                 "efel_AP_width @ long_square_rheo, aver",
-                "sag",
+                "ipfx_sag",
                 "efel_sag_ratio1 @ subthreshold, aver",
             ],  # start with no additional columns
             height=300,
