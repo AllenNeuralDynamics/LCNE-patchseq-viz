@@ -10,7 +10,6 @@ import panel as pn
 from bokeh.layouts import gridplot
 from bokeh.models import BoxZoomTool, ColumnDataSource, HoverTool, Span, WheelZoomTool
 from bokeh.plotting import figure
-from scipy.signal import savgol_filter
 from scipy.stats import multivariate_normal
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
@@ -18,10 +17,6 @@ from sklearn.metrics import silhouette_score
 from umap import UMAP
 
 from LCNE_patchseq_analysis import REGION_COLOR_MAPPER
-from LCNE_patchseq_analysis.population_analysis.spikes import (
-    normalize_data,
-    extract_representative_spikes,
-)
 from LCNE_patchseq_analysis.pipeline_util.s3 import get_public_representative_spikes
 
 
@@ -239,9 +234,9 @@ class RawSpikeAnalysis:
         dim_reduction_method: str = "PCA",
         normalize_window_v: tuple = (-2, 4),
         normalize_window_dvdt: tuple = (-2, 0),
-            ) -> gridplot:
+    ) -> gridplot:
         """Create plots for spike analysis including dimensionality reduction and clustering."""
-                # Filter data based on spike_range
+        # Filter data based on spike_range
         df_v_norm = df_v_norm.loc[
             :, (df_v_norm.columns >= spike_range[0]) & (df_v_norm.columns <= spike_range[1])
         ]
@@ -540,7 +535,7 @@ class RawSpikeAnalysis:
 
         # Create grid layout with independent axes
         layout = gridplot([[p1, p2, p3]], toolbar_location="right", merge_tools=False)
-        
+
         return layout
 
 

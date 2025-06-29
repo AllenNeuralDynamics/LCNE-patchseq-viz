@@ -400,7 +400,7 @@ class ScatterPlot:
         """Update the scatter plot with new parameters."""
         # Use provided dataframe if supplied, otherwise use instance df_meta
         df_to_use = df_meta if df_meta is not None else self.df_meta
-        
+
         # Strip off [valid N] from the column name
         x_col = x_col.split(" [valid ")[0]
         y_col = y_col.split(" [valid ")[0]
@@ -443,40 +443,40 @@ class ScatterPlot:
         )
 
         # Add scatter glyph using the data source
-        scatter = p.scatter(x=x_col, y=y_col, source=source, size=size, color=color, alpha=alpha)
+        p.scatter(x=x_col, y=y_col, source=source, size=size, color=color, alpha=alpha)
 
         # Add linear regression if requested and both columns are numeric
         if show_linear_fit and x_col != "Date" and x_col != "None" and y_col != "None":
             # Get clean numeric data
             # Convert to numeric and drop rows where either x or y is NA
-            df_clean = df_to_use[[x_col, y_col]].apply(pd.to_numeric, errors='coerce').dropna()
+            df_clean = df_to_use[[x_col, y_col]].apply(pd.to_numeric, errors="coerce").dropna()
             x_data = df_clean[x_col]
             y_data = df_clean[y_col]
-            
+
             # Only proceed if we have valid data
             if not x_data.empty and not y_data.empty:
                 # Perform linear regression
                 slope, intercept, r_value, p_value, std_err = stats.linregress(x_data, y_data)
-                
+
                 # Calculate fitted line points
                 x_min, x_max = x_data.min(), x_data.max()
                 x_fit = np.array([x_min, x_max])
                 y_fit = slope * x_fit + intercept
-                
+
                 # Add fitted line
-                setting = {"line_width": 3, "line_dash": "solid"} if p_value < 0.05 else {
-                    "line_width": 2, "line_dash": "dashed"}
-                line = p.line(x_fit, y_fit, line_color="black", 
-                              **setting)
-                
+                setting = (
+                    {"line_width": 3, "line_dash": "solid"}
+                    if p_value < 0.05
+                    else {"line_width": 2, "line_dash": "dashed"}
+                )
+                line = p.line(x_fit, y_fit, line_color="black", **setting)
+
                 # Add legend with R² and p-value
                 legend_items = [
                     (f"Linear Fit (p = {p_value:.3e}, R² = {r_value**2:.3f})", [line]),
                 ]
                 legend = Legend(
-                    items=legend_items, 
-                    location="top_left",
-                    label_text_font_size=f"{font_size-2}pt"
+                    items=legend_items, location="top_left", label_text_font_size=f"{font_size-2}pt"
                 )
                 p.add_layout(legend)
 
