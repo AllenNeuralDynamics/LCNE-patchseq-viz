@@ -6,6 +6,8 @@ import logging
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 import pandas as pd
 import panel as pn
 from bokeh.layouts import gridplot
@@ -560,14 +562,63 @@ class ScatterPlot:
         count_non_nan.insert(0, "Total", count_non_nan.sum(axis=1))
         count_non_nan.index = pd.Index(["X", "Y"], name="Valid N")
 
+        # --- Create marginalized histograms to compare aross colors ---
+
+        # Prepare marginalized histogram using seaborn's histplot (KDE) for y_col by color_col
+        marginalized_histograms = pn.pane.Markdown("No marginalized histogram available.")
+        try:
+            if y_col != "Date" and y_col != "None" and color_col != "None":
+                fig, ax = plt.subplots(figsize=(4, 2.5))
+                # Drop NA for y_col and color_col
+                plot_df = df_to_use[[y_col, color_col]].dropna()
+                if not plot_df.empty:
+                    # Extract color mapping from the scatter plot
+                    color_palette_dict = None
+                    color_mapping_result = temp_color_mapping.determine_color_mapping(
+                        color_col, color_palette, p, font_size=font_size, if_add_color_bar=False
+                    )
+                    if isinstance(color_mapping_result, dict) and 'transform' in color_mapping_result:
+                        color_mapper = color_mapping_result['transform']
+                        if hasattr(color_mapper, 'factors') and hasattr(color_mapper, 'palette'):
+                            color_palette_dict = dict(zip(color_mapper.factors, color_mapper.palette))
+
+                    sns.kdeplot(
+                        data=plot_df,
+                        x=y_col,
+                        hue=color_col,
+                        common_norm=False,
+                        fill=False,
+                        ax=ax,
+                        legend=True,
+                        palette=color_palette_dict,
+                    )
+                    sns.despine(trim=True)
+                    ax.set_xlabel(y_col)
+                    plt.tight_layout()
+
+                    # Use Panel's matplotlib pane instead of manual base64 conversion
+                    marginalized_histograms = pn.pane.Matplotlib(fig, tight=True, width=500)
+        except Exception as e:
+            logger.warning(f"Could not create marginalized KDE histogram: {e}")
+            marginalized_histograms = pn.pane.Markdown("Marginalized histogram error.")
+
         # Create grid layout
-        layout = pn.Column(
-            gridplot(
-                [[y_hist, p], [None, x_hist]],
-                toolbar_location="right",
-                merge_tools=True,
-                toolbar_options=dict(logo=None),
+        layout = pn.Row(
+            pn.Column(
+                gridplot(
+                    [[y_hist, p], [None, x_hist]],
+                    toolbar_location="right",
+                    merge_tools=True,
+                    toolbar_options=dict(logo=None),
+                ),
+                pn.pane.Markdown(count_non_nan.to_markdown()),
+                sizing_mode="stretch_width",
             ),
-            pn.pane.Markdown(count_non_nan.to_markdown()),
+            pn.Spacer(width=20),
+            pn.Column(
+                marginalized_histograms,
+                sizing_mode="fixed",
+                width=520,
+            ),
         )
         return layout
