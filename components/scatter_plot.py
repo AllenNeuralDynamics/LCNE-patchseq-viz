@@ -5,6 +5,7 @@ Scatter plot component for the visualization app.
 import logging
 from typing import Any, Dict, List, Tuple
 
+from networkx import density
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -573,7 +574,7 @@ class ScatterPlot:
         marginalized_histograms = pn.pane.Markdown("No marginalized histogram available.")
         try:
             if y_col != "Date" and y_col != "None" and color_col != "None":
-                fig, ax = plt.subplots(figsize=(4, 2.5))
+                fig, ax = plt.subplots(figsize=(4, 3.5), dpi=300)
                 # Drop NA for y_col and color_col
                 plot_df = df_to_use[[y_col, color_col]].dropna()
                 if not plot_df.empty:
@@ -654,11 +655,12 @@ class ScatterPlot:
                         ax.set_ylim(current_ylim[0], max(current_ylim[1], max_y_pos + 0.02))
                     
                     # Move legend to top of the plot
+                    y_lim = ax.get_ylim()
                     sns.move_legend(
                         ax,
-                        loc="upper center",
-                        bbox_to_anchor=(0.5, 1.4),
-                        ncol=2,
+                        loc="center left",
+                        bbox_to_anchor=(1.01, 0.5),
+                        ncol=1,
                         frameon=False,
                         fontsize="small",
                         title=color_col,
