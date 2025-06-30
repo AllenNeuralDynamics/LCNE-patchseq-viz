@@ -610,6 +610,49 @@ class ScatterPlot:
                     sns.despine(trim=True)
                     ax.set_xlabel(y_col)
                     
+                    # Compute mean ± SEM for each group and add as dot + errorbar
+                    y_positions = []  # Track y positions for staggering
+                    for i, (group, data_subset) in enumerate(plot_df.groupby(color_col)):
+                        values = data_subset[y_col].dropna()
+                        if len(values) > 0:
+                            # Ensure values are numeric and convert to float
+                            try:
+                                numeric_values = pd.to_numeric(values, errors='coerce').dropna()
+                                if len(numeric_values) > 0:
+                                    mean_val = float(np.mean(numeric_values))
+                                    # Use numpy's std with ddof=1 to calculate SEM manually
+                                    if len(numeric_values) > 1:
+                                        sem_val = float(np.std(numeric_values, ddof=1) / np.sqrt(len(numeric_values)))
+                                    else:
+                                        sem_val = 0.0
+                                    
+                                    # Get color for this group
+                                    group_color = color_palette_dict.get(group, 'black') if color_palette_dict else 'black'
+                                    
+                                    # Stagger y position slightly for each group
+                                    # Compute y position as 10% + i * 10% of the current ylim range
+                                    ylim = ax.get_ylim()
+                                    y_pos = ylim[0] + 0.05 * (ylim[1] - ylim[0]) + i * 0.05 * (ylim[1] - ylim[0])
+                                    y_positions.append(y_pos)
+                                    
+                                    # Add dot for mean
+                                    ax.plot(mean_val, y_pos, 'o', color=group_color, markersize=4, 
+                                            markeredgewidth=1)
+                                    
+                                    # Add error bar for SEM
+                                    if sem_val > 0.0:
+                                        ax.errorbar(mean_val, y_pos, xerr=sem_val, color=group_color, 
+                                                  capsize=3, capthick=1.5, elinewidth=1.5, zorder=9)
+                            except (ValueError, TypeError):
+                                # Skip non-numeric data
+                                continue
+                    
+                    # Adjust y-axis limits to accommodate the error bars
+                    current_ylim = ax.get_ylim()
+                    if y_positions:
+                        max_y_pos = max(y_positions)
+                        ax.set_ylim(current_ylim[0], max(current_ylim[1], max_y_pos + 0.02))
+                    
                     # Move legend to top of the plot
                     sns.move_legend(
                         ax,
@@ -634,7 +677,7 @@ class ScatterPlot:
                     [[y_hist, p], [None, x_hist]],
                     toolbar_location="right",
                     merge_tools=True,
-                    toolbar_options=dict(logo=None),
+                    toolbar_options={"logo": None},
                 ),
                 pn.pane.Markdown(count_non_nan.to_markdown()),
                 pn.pane.Markdown(count_nan.to_markdown()),
