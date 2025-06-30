@@ -562,6 +562,11 @@ class ScatterPlot:
         count_non_nan.insert(0, "Total", count_non_nan.sum(axis=1))
         count_non_nan.index = pd.Index(["X", "Y"], name="Valid N")
 
+        # Count NaN values (missing data) grouped by "injection region"
+        count_nan = df_to_use.groupby("injection region")[[x_col, y_col]].apply(lambda x: x.isna().sum()).T
+        count_nan.insert(0, "Total", count_nan.sum(axis=1))
+        count_nan.index = pd.Index(["X", "Y"], name="Missing Data")
+
         # --- Create marginalized histograms to compare aross colors ---
 
         # Prepare marginalized histogram using seaborn's histplot (KDE) for y_col by color_col
@@ -632,6 +637,7 @@ class ScatterPlot:
                     toolbar_options=dict(logo=None),
                 ),
                 pn.pane.Markdown(count_non_nan.to_markdown()),
+                pn.pane.Markdown(count_nan.to_markdown()),
                 sizing_mode="stretch_width",
             ),
             pn.Spacer(width=20),
