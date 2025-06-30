@@ -15,8 +15,10 @@ from bokeh.layouts import gridplot
 from bokeh.models import BoxZoomTool, ColumnDataSource, DatetimeTickFormatter, HoverTool, Legend
 from bokeh.plotting import figure
 from scipy import stats
+from scipy.stats import mannwhitneyu
 from sklearn.metrics import silhouette_score
 from sklearn.mixture import GaussianMixture
+from itertools import combinations
 
 from LCNE_patchseq_analysis.panel_app.components.color_mapping import ColorMapping
 from LCNE_patchseq_analysis.panel_app.components.size_mapping import SizeMapping
@@ -572,6 +574,7 @@ class ScatterPlot:
 
         # Prepare marginalized histogram using seaborn's histplot (KDE) for y_col by color_col
         marginalized_histograms = pn.pane.Markdown("No marginalized histogram available.")
+        pvalues_table = pn.pane.Markdown("**No statistical tests available**")
         try:
             if y_col != "Date" and y_col != "None" and color_col != "None":
                 fig, ax = plt.subplots(figsize=(4, 3.5), dpi=300)
@@ -665,12 +668,39 @@ class ScatterPlot:
                         fontsize="small",
                         title=color_col,
                     )
-                    
-                    # Use Panel's matplotlib pane instead of manual base64 conversion
+                     # Use Panel's matplotlib pane instead of manual base64 conversion
                     marginalized_histograms = pn.pane.Matplotlib(fig, tight=True, width=500)
+                    
+                    # Perform pairwise Mann-Whitney U tests
+                    pairwise_tests = {}
+                    groups = list(plot_df[color_col].unique())
+                    
+                    for group1, group2 in combinations(groups, 2):
+                        data1 = pd.to_numeric(plot_df[plot_df[color_col] == group1][y_col], errors='coerce').dropna()
+                        data2 = pd.to_numeric(plot_df[plot_df[color_col] == group2][y_col], errors='coerce').dropna()
+                        
+                        if len(data1) > 0 and len(data2) > 0:
+                            try:
+                                statistic, p_value = mannwhitneyu(data1, data2, alternative='two-sided')
+                                pairwise_tests[f"{group1} vs {group2}"] = p_value
+                            except Exception as e:
+                                logger.warning(f"Could not perform Mann-Whitney U test for {group1} vs {group2}: {e}")
+                                pairwise_tests[f"{group1} vs {group2}"] = np.nan
+                    
+                    # Create a table of p-values
+                    if pairwise_tests:
+                        pvalues_df = pd.DataFrame(list(pairwise_tests.items()), columns=['Comparison', 'p-value'])
+                        pvalues_df['p-value'] = pvalues_df['p-value'].apply(lambda x: f"{x:.3e}" if not pd.isna(x) else "NaN")
+                        pvalues_table = pn.pane.Markdown(
+                            f"**Mann-Whitney U Test (pairwise comparisons)**\n\n{pvalues_df.to_markdown(index=False)}"
+                        )
+                    else:
+                        pvalues_table = pn.pane.Markdown("**No pairwise comparisons available**")
+                    
         except Exception as e:
             logger.warning(f"Could not create marginalized KDE histogram: {e}")
             marginalized_histograms = pn.pane.Markdown("Marginalized histogram error.")
+            pvalues_table = pn.pane.Markdown("**No statistical tests available**")
 
         # Create grid layout
         layout = pn.Row(
@@ -688,6 +718,7 @@ class ScatterPlot:
             pn.Spacer(width=20),
             pn.Column(
                 marginalized_histograms,
+                pvalues_table,
                 sizing_mode="fixed",
                 width=520,
             ),
