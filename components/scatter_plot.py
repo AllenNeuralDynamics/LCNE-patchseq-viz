@@ -582,20 +582,40 @@ class ScatterPlot:
                         if hasattr(color_mapper, 'factors') and hasattr(color_mapper, 'palette'):
                             color_palette_dict = dict(zip(color_mapper.factors, color_mapper.palette))
 
+                    # Count number of samples per group
+                    group_counts = plot_df[color_col].value_counts().to_dict()
+                    # Create a mapping from original group name to "group (n = xxx)"
+                    group_labels = {
+                        group: f"{group} (n = {count})" for group, count in group_counts.items()
+                    }
+                    # Add a new column for legend labels
+                    plot_df["_legend_label"] = plot_df[color_col].map(group_labels)
+
                     sns.kdeplot(
                         data=plot_df,
                         x=y_col,
-                        hue=color_col,
+                        hue="_legend_label",
                         common_norm=False,
                         fill=False,
                         ax=ax,
-                        legend=True,
-                        palette=color_palette_dict,
+                        palette=color_palette_dict if color_palette_dict is None else {
+                            group_labels[group]: color_palette_dict[group] for group in group_labels if group in color_palette_dict
+                        },
                     )
                     sns.despine(trim=True)
                     ax.set_xlabel(y_col)
-                    plt.tight_layout()
-
+                    
+                    # Move legend to top of the plot
+                    sns.move_legend(
+                        ax,
+                        loc="upper center",
+                        bbox_to_anchor=(0.5, 1.4),
+                        ncol=2,
+                        frameon=False,
+                        fontsize="small",
+                        title=color_col,
+                    )
+                    
                     # Use Panel's matplotlib pane instead of manual base64 conversion
                     marginalized_histograms = pn.pane.Matplotlib(fig, tight=True, width=500)
         except Exception as e:
