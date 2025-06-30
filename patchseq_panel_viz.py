@@ -627,7 +627,7 @@ class PatchSeqNWBApp(param.Parameterized):
         # --- Connect global filter components ---
         filter_query = pn.widgets.TextAreaInput(
             name="Query string",
-            value="`jem-status_reporter` == 'Positive' & `LC_targeting` == 'retro'",
+            value="`jem-status_reporter` == 'Positive' & `injection region` != 'Non-Retro'",
             placeholder="Enter a pandas query string",
             sizing_mode="stretch_width",
             height=100,
@@ -675,7 +675,7 @@ class PatchSeqNWBApp(param.Parameterized):
                 """
                     Enter a pandas query to filter cells. Examples:
                     - `` `jem-status_reporter` == "Positive"``
-                    - `` `LC_targeting` == "retro" ``
+                    - `` `injection region` != 'Non-Retro' ``
                     - `` `gene_Dbh (log_normed)` > 0 or `gene_Th (log_normed)` > 0 or
                          `gene_Slc18a2 (log_normed)` > 0 or `gene_Slc6a2 (log_normed)` > 0 ``
                     - `` `gene_Dbh (log_normed)` > 0 and `gene_Th (log_normed)` > 0 ``
