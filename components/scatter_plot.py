@@ -5,15 +5,20 @@ Scatter plot component for the visualization app.
 import logging
 from typing import Any, Dict, List, Tuple
 
+from networkx import density
 import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 import pandas as pd
 import panel as pn
 from bokeh.layouts import gridplot
 from bokeh.models import BoxZoomTool, ColumnDataSource, DatetimeTickFormatter, HoverTool, Legend
 from bokeh.plotting import figure
 from scipy import stats
+from scipy.stats import mannwhitneyu
 from sklearn.metrics import silhouette_score
 from sklearn.mixture import GaussianMixture
+from itertools import combinations
 
 from LCNE_patchseq_analysis.panel_app.components.color_mapping import ColorMapping
 from LCNE_patchseq_analysis.panel_app.components.size_mapping import SizeMapping
@@ -560,14 +565,162 @@ class ScatterPlot:
         count_non_nan.insert(0, "Total", count_non_nan.sum(axis=1))
         count_non_nan.index = pd.Index(["X", "Y"], name="Valid N")
 
+        # Count NaN values (missing data) grouped by "injection region"
+        count_nan = df_to_use.groupby("injection region")[[x_col, y_col]].apply(lambda x: x.isna().sum()).T
+        count_nan.insert(0, "Total", count_nan.sum(axis=1))
+        count_nan.index = pd.Index(["X", "Y"], name="Missing Data")
+
+        # --- Create marginalized histograms to compare aross colors ---
+
+        # Prepare marginalized histogram using seaborn's histplot (KDE) for y_col by color_col
+        marginalized_histograms = pn.pane.Markdown("No marginalized histogram available.")
+        pvalues_table = pn.pane.Markdown("**No statistical tests available**")
+        try:
+            if y_col != "Date" and y_col != "None" and color_col != "None":
+                fig, ax = plt.subplots(figsize=(4, 3.5), dpi=300)
+                # Drop NA for y_col and color_col
+                plot_df = df_to_use[[y_col, color_col]].dropna()
+                if not plot_df.empty:
+                    # Extract color mapping from the scatter plot
+                    color_palette_dict = None
+                    color_mapping_result = temp_color_mapping.determine_color_mapping(
+                        color_col, color_palette, p, font_size=font_size, if_add_color_bar=False
+                    )
+                    if isinstance(color_mapping_result, dict) and 'transform' in color_mapping_result:
+                        color_mapper = color_mapping_result['transform']
+                        if hasattr(color_mapper, 'factors') and hasattr(color_mapper, 'palette'):
+                            color_palette_dict = dict(zip(color_mapper.factors, color_mapper.palette))
+
+                    # Count number of samples per group
+                    group_counts = plot_df[color_col].value_counts().to_dict()
+                    # Create a mapping from original group name to "group (n = xxx)"
+                    group_labels = {
+                        group: f"{group} (n = {count})" for group, count in group_counts.items()
+                    }
+                    # Add a new column for legend labels
+                    plot_df["_legend_label"] = plot_df[color_col].map(group_labels)
+
+                    sns.kdeplot(
+                        data=plot_df,
+                        x=y_col,
+                        hue="_legend_label",
+                        common_norm=False,
+                        fill=False,
+                        ax=ax,
+                        palette=color_palette_dict if color_palette_dict is None else {
+                            group_labels[group]: color_palette_dict[group] for group in group_labels if group in color_palette_dict
+                        },
+                    )
+                    sns.despine(trim=True)
+                    ax.set_xlabel(y_col)
+                    
+                    # Compute mean ± SEM for each group and add as dot + errorbar
+                    y_positions = []  # Track y positions for staggering
+                    for i, (group, data_subset) in enumerate(plot_df.groupby(color_col)):
+                        values = data_subset[y_col].dropna()
+                        if len(values) > 0:
+                            # Ensure values are numeric and convert to float
+                            try:
+                                numeric_values = pd.to_numeric(values, errors='coerce').dropna()
+                                if len(numeric_values) > 0:
+                                    mean_val = float(np.mean(numeric_values))
+                                    # Use numpy's std with ddof=1 to calculate SEM manually
+                                    if len(numeric_values) > 1:
+                                        sem_val = float(np.std(numeric_values, ddof=1) / np.sqrt(len(numeric_values)))
+                                    else:
+                                        sem_val = 0.0
+                                    
+                                    # Get color for this group
+                                    group_color = color_palette_dict.get(group, 'black') if color_palette_dict else 'black'
+                                    
+                                    # Stagger y position slightly for each group
+                                    # Compute y position as 10% + i * 10% of the current ylim range
+                                    ylim = ax.get_ylim()
+                                    y_pos = ylim[0] + 0.05 * (ylim[1] - ylim[0]) + i * 0.05 * (ylim[1] - ylim[0])
+                                    y_positions.append(y_pos)
+                                    
+                                    # Add dot for mean
+                                    ax.plot(mean_val, y_pos, 'o', color=group_color, markersize=4, 
+                                            markeredgewidth=1)
+                                    
+                                    # Add error bar for SEM
+                                    if sem_val > 0.0:
+                                        ax.errorbar(mean_val, y_pos, xerr=sem_val, color=group_color, 
+                                                  capsize=3, capthick=1.5, elinewidth=1.5, zorder=9)
+                            except (ValueError, TypeError):
+                                # Skip non-numeric data
+                                continue
+                    
+                    # Adjust y-axis limits to accommodate the error bars
+                    current_ylim = ax.get_ylim()
+                    if y_positions:
+                        max_y_pos = max(y_positions)
+                        ax.set_ylim(current_ylim[0], max(current_ylim[1], max_y_pos + 0.02))
+                    
+                    # Move legend to top of the plot
+                    y_lim = ax.get_ylim()
+                    sns.move_legend(
+                        ax,
+                        loc="center left",
+                        bbox_to_anchor=(1.01, 0.5),
+                        ncol=1,
+                        frameon=False,
+                        fontsize="small",
+                        title=color_col,
+                    )
+                     # Use Panel's matplotlib pane instead of manual base64 conversion
+                    marginalized_histograms = pn.pane.Matplotlib(fig, tight=True, width=500)
+                    
+                    # Perform pairwise Mann-Whitney U tests
+                    pairwise_tests = {}
+                    groups = list(plot_df[color_col].unique())
+                    
+                    for group1, group2 in combinations(groups, 2):
+                        data1 = pd.to_numeric(plot_df[plot_df[color_col] == group1][y_col], errors='coerce').dropna()
+                        data2 = pd.to_numeric(plot_df[plot_df[color_col] == group2][y_col], errors='coerce').dropna()
+                        
+                        if len(data1) > 0 and len(data2) > 0:
+                            try:
+                                statistic, p_value = mannwhitneyu(data1, data2, alternative='two-sided')
+                                pairwise_tests[f"{group1} vs {group2}"] = p_value
+                            except Exception as e:
+                                logger.warning(f"Could not perform Mann-Whitney U test for {group1} vs {group2}: {e}")
+                                pairwise_tests[f"{group1} vs {group2}"] = np.nan
+                    
+                    # Create a table of p-values
+                    if pairwise_tests:
+                        pvalues_df = pd.DataFrame(list(pairwise_tests.items()), columns=['Comparison', 'p-value'])
+                        pvalues_df['p-value'] = pvalues_df['p-value'].apply(lambda x: f"{x:.3e}" if not pd.isna(x) else "NaN")
+                        pvalues_table = pn.pane.Markdown(
+                            f"**Mann-Whitney U Test (pairwise comparisons)**\n\n{pvalues_df.to_markdown(index=False)}"
+                        )
+                    else:
+                        pvalues_table = pn.pane.Markdown("**No pairwise comparisons available**")
+                    
+        except Exception as e:
+            logger.warning(f"Could not create marginalized KDE histogram: {e}")
+            marginalized_histograms = pn.pane.Markdown("Marginalized histogram error.")
+            pvalues_table = pn.pane.Markdown("**No statistical tests available**")
+
         # Create grid layout
-        layout = pn.Column(
-            gridplot(
-                [[y_hist, p], [None, x_hist]],
-                toolbar_location="right",
-                merge_tools=True,
-                toolbar_options=dict(logo=None),
+        layout = pn.Row(
+            pn.Column(
+                gridplot(
+                    [[y_hist, p], [None, x_hist]],
+                    toolbar_location="right",
+                    merge_tools=True,
+                    toolbar_options={"logo": None},
+                ),
+                pn.pane.Markdown(count_non_nan.to_markdown()),
+                pn.pane.Markdown(count_nan.to_markdown()),
+                sizing_mode="stretch_width",
             ),
-            pn.pane.Markdown(count_non_nan.to_markdown()),
+            pn.Spacer(width=20),
+            pn.Column(
+                marginalized_histograms,
+                pvalues_table,
+                sizing_mode="fixed",
+                width=520,
+            ),
         )
         return layout

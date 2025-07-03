@@ -42,7 +42,7 @@ class ColorMapping:
         return color_bar
 
     def determine_color_mapping(  # noqa: C901
-        self, color_mapping: str, color_palette: Any, p: figure, font_size: int = 14
+        self, color_mapping: str, color_palette: Any, p: figure, font_size: int = 14, if_add_color_bar: bool = True
     ) -> Dict[str, Any]:
         """
         Determine the color mapping for the scatter plot.
@@ -66,7 +66,8 @@ class ColorMapping:
             )
 
             # Add a color bar for categorical data
-            self.add_color_bar(color_mapper, color_mapping, p, font_size)
+            if if_add_color_bar:
+                self.add_color_bar(color_mapper, color_mapping, p, font_size)
 
             return {"field": color_mapping, "transform": color_mapper}
 
@@ -127,7 +128,9 @@ class ColorMapping:
                 factors=factors,
                 palette=categorical_palette,
             )
-            self.add_color_bar(color_mapper, color_mapping, p)
+            if if_add_color_bar:
+                # Add a color bar for categorical data
+                self.add_color_bar(color_mapper, color_mapping, p)
             return {"field": color_mapping, "transform": color_mapper}
 
         # Try to convert the column to numeric
@@ -140,7 +143,8 @@ class ColorMapping:
             color = {"field": color_mapping, "transform": color_mapper}
 
             # Add a color bar
-            self.add_color_bar(color_mapper, color_mapping, p)
+            if if_add_color_bar:
+                self.add_color_bar(color_mapper, color_mapping, p)
             return color
 
         return "black"
