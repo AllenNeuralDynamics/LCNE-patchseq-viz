@@ -8,6 +8,9 @@ ENV NUMBA_DISABLE_CACHE=1
 # Copy requirements first for better caching
 COPY ./requirements.txt /code/requirements.txt
 
+# Install git
+RUN apt-get update && apt-get install -y git
+
 RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
 
 # Some additional dependencies that seems to be needed for Hugging Face Spaces
