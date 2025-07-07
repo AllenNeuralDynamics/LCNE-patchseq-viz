@@ -1,3 +1,8 @@
-# aind-capsule-template
-
-Basic structure of a capsule to be customized as needed.
+---
+title: Panel app in 
+emoji: 🤗
+colorFrom: blue
+colorTo: gray
+sdk: docker
+app_port: 7860
+---

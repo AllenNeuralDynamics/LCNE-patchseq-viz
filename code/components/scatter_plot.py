@@ -5,7 +5,6 @@ Scatter plot component for the visualization app.
 import logging
 from typing import Any, Dict, List, Tuple
 
-from networkx import density
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -20,9 +19,10 @@ from sklearn.metrics import silhouette_score
 from sklearn.mixture import GaussianMixture
 from itertools import combinations
 
-from LCNE_patchseq_analysis.panel_app.components.color_mapping import ColorMapping
-from LCNE_patchseq_analysis.panel_app.components.size_mapping import SizeMapping
 from LCNE_patchseq_analysis.pipeline_util.s3 import get_public_url_cell_summary
+from components.color_mapping import ColorMapping
+from components.size_mapping import SizeMapping
+
 
 logger = logging.getLogger(__name__)
 

@@ -19,8 +19,6 @@ from bokeh.plotting import figure
 
 from LCNE_patchseq_analysis.data_util.metadata import load_ephys_metadata
 from LCNE_patchseq_analysis.data_util.nwb import PatchSeqNWB
-from LCNE_patchseq_analysis.panel_app.components.scatter_plot import ScatterPlot
-from LCNE_patchseq_analysis.panel_app.components.spike_analysis import RawSpikeAnalysis
 from LCNE_patchseq_analysis.pipeline_util.s3 import (
     S3_PUBLIC_URL_BASE,
     get_public_url_cell_summary,
@@ -28,6 +26,10 @@ from LCNE_patchseq_analysis.pipeline_util.s3 import (
     load_efel_features_from_roi,
 )
 from LCNE_patchseq_analysis.population_analysis.spikes import extract_representative_spikes
+
+from components.scatter_plot import ScatterPlot
+from components.spike_analysis import RawSpikeAnalysis
+
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)

@@ -1,0 +1,25 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Panel App",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "panel",
+            "args": [
+                "serve",
+                "code/patchseq_panel_viz.py",
+                "--dev",
+                "--show",
+                "--allow-websocket-origin=localhost:5006",
+                "--allow-websocket-origin=codeocean.allenneuraldynamics.org"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+        },
+    ]
+}
