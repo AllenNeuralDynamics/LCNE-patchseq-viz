@@ -14,7 +14,10 @@ from scipy.stats import multivariate_normal
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score
-from umap import UMAP
+try:  # UMAP does not work in Hugging Face Spaces
+    from umap import UMAP
+except ImportError:
+    UMAP = None
 
 from LCNE_patchseq_analysis import REGION_COLOR_MAPPER
 from LCNE_patchseq_analysis.pipeline_util.s3 import get_public_representative_spikes

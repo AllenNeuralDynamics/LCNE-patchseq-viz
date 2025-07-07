@@ -2,9 +2,6 @@ FROM python:3.10-slim
 
 WORKDIR /code
 
-# Set environment variables (solve numba caching issue of UMAP)
-ENV NUMBA_DISABLE_CACHE=1
-
 # Copy requirements first for better caching
 COPY ./requirements.txt /code/requirements.txt
 
