@@ -16,9 +16,6 @@ RUN pip install --no-cache-dir --upgrade \
 
 COPY . .
 
-# Install the package
-RUN pip install --no-cache-dir .
-
 # Set up the entrypoint for Hugging Face Spaces
 # The port 7860 is the default port that Hugging Face Spaces expects
 CMD panel serve src/LCNE_patchseq_analysis/panel_app/patchseq_panel_viz.py \
