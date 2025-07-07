@@ -16,7 +16,7 @@ from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score
 try:  # UMAP does not work in Hugging Face Spaces
     from umap import UMAP
-except ImportError:
+except:
     UMAP = None
 
 from LCNE_patchseq_analysis import REGION_COLOR_MAPPER
