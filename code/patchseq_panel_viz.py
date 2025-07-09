@@ -682,6 +682,7 @@ class PatchSeqNWBApp(param.Parameterized):
                          `gene_Slc18a2 (log_normed)` > 0 or `gene_Slc6a2 (log_normed)` > 0 ``
                     - `` `gene_Dbh (log_normed)` > 0 and `gene_Th (log_normed)` > 0 ``
                     - `` mapmycells_subclass_name.str.contains("DBH", case=False, na=False) ``
+                    - `` `jem-nucleus_post_patch` == "nucleus_present" ``
                     - `` `X (A --> P)` > 9500 and `X (A --> P)` < 11500 and
                          `Y (D --> V)` > 2500 and `Y (D --> V)` < 6000 ``
                     """
