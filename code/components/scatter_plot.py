@@ -575,6 +575,11 @@ class ScatterPlot:
             df_to_use, y_col, color_col, color_palette, temp_color_mapping, p, font_size
         )
         
+        # --- Create violin plot to compare across injection regions ---
+        violin_plot = self.create_violin_plot(
+            df_to_use, y_col, color_col, color_palette, temp_color_mapping, p, font_size
+        )
+        
         # Perform pairwise statistical tests
         # Drop NA for y_col and color_col for statistical tests
         plot_df_for_stats = df_to_use[[y_col, color_col]].dropna() if (y_col != "Date" and y_col != "None" and color_col != "None") else pd.DataFrame()
@@ -597,8 +602,10 @@ class ScatterPlot:
             pn.Column(
                 marginalized_histograms,
                 pvalues_table,
+                pn.Spacer(height=20),
+                violin_plot,
                 sizing_mode="fixed",
-                width=520,
+                width=620,
             ),
         )
         return layout
@@ -793,3 +800,113 @@ class ScatterPlot:
             pvalues_table = pn.pane.Markdown("**Statistical test error**")
         
         return pvalues_table
+
+    def create_violin_plot(
+        self,
+        df_to_use: pd.DataFrame,
+        y_col: str,
+        color_col: str,
+        color_palette: str,
+        temp_color_mapping: ColorMapping,
+        p: figure,
+        font_size: int
+    ) -> Any:
+        """Create violin plot to compare data distributions across injection regions.
+        
+        Args:
+            df_to_use: DataFrame containing the data
+            y_col: Column name for y-axis variable
+            color_col: Column name for color grouping (injection regions)
+            color_palette: Color palette name
+            temp_color_mapping: ColorMapping instance for this data
+            p: Bokeh figure (used for color mapping extraction)
+            font_size: Font size for labels
+            
+        Returns:
+            Panel matplotlib object with violin plot
+        """
+        violin_plot = pn.pane.Markdown("No violin plot available.")
+        
+        try:
+            if y_col != "Date" and y_col != "None" and color_col != "None":
+                fig, ax = plt.subplots(figsize=(6, 4), dpi=300)
+                # Drop NA for y_col and color_col
+                plot_df = df_to_use[[y_col, color_col]].dropna()
+                if not plot_df.empty:
+                    # Extract color mapping from the scatter plot
+                    color_palette_dict = None
+                    color_mapping_result = temp_color_mapping.determine_color_mapping(
+                        color_col, color_palette, p, font_size=font_size, if_add_color_bar=False
+                    )
+                    if isinstance(color_mapping_result, dict) and 'transform' in color_mapping_result:
+                        color_mapper = color_mapping_result['transform']
+                        if hasattr(color_mapper, 'factors') and hasattr(color_mapper, 'palette'):
+                            color_palette_dict = dict(zip(color_mapper.factors, color_mapper.palette))
+
+                    # Count number of samples per group (valid data)
+                    group_counts = plot_df[color_col].value_counts().to_dict()
+                    
+                    # Count missing data (NaN) per group from original dataframe
+                    group_nan_counts = {}
+                    for group in group_counts.keys():
+                        # Get all rows for this group from original dataframe
+                        group_mask = df_to_use[color_col] == group
+                        # Count NaN values in y_col for this group
+                        nan_count = df_to_use.loc[group_mask, y_col].isna().sum()
+                        group_nan_counts[group] = nan_count
+                    
+                    # Convert y_col to numeric
+                    plot_df[y_col] = pd.to_numeric(plot_df[y_col], errors='coerce')
+                    plot_df = plot_df.dropna(subset=[y_col])
+                    
+                    if not plot_df.empty:
+                        # Create violin plot
+                        parts = ax.violinplot(
+                            [plot_df[plot_df[color_col] == group][y_col].values 
+                             for group in sorted(plot_df[color_col].unique())],
+                            positions=range(len(plot_df[color_col].unique())),
+                            showmeans=True,
+                            showmedians=True,
+                            showextrema=False
+                        )
+                        
+                        # Color the violin plots
+                        groups = sorted(plot_df[color_col].unique())
+                        for i, (group, pc) in enumerate(zip(groups, parts['bodies'])):
+                            color = color_palette_dict.get(group, 'lightblue') if color_palette_dict else 'lightblue'
+                            pc.set_facecolor(color)
+                            pc.set_alpha(0.7)
+                        
+                        # Set colors for mean and median lines
+                        if 'cmeans' in parts:
+                            parts['cmeans'].set_colors(['red'])
+                            parts['cmeans'].set_linewidth(2)
+                        if 'cmedians' in parts:
+                            parts['cmedians'].set_colors(['black'])
+                            parts['cmedians'].set_linewidth(2)
+                        
+                        # Set x-axis labels with sample counts
+                        group_labels_with_counts = [
+                            f"{group}\n(n={group_counts.get(group, 0)}, missing {group_nan_counts.get(group, 0)})" 
+                            for group in groups
+                        ]
+                        ax.set_xticks(range(len(groups)))
+                        ax.set_xticklabels(group_labels_with_counts, rotation=45, ha='right')
+                        ax.set_ylabel(y_col)
+                        ax.set_title(f'Distribution of {y_col} across {color_col}')
+                        
+                        # Add grid and styling
+                        ax.grid(True, alpha=0.3)
+                        sns.despine(trim=True)
+                        
+                        # Adjust layout to prevent label cutoff
+                        plt.tight_layout()
+                        
+                        # Use Panel's matplotlib pane
+                        violin_plot = pn.pane.Matplotlib(fig, tight=True, width=600)
+                    
+        except Exception as e:
+            logger.warning(f"Could not create violin plot: {e}")
+            violin_plot = pn.pane.Markdown("Violin plot error.")
+        
+        return violin_plot
