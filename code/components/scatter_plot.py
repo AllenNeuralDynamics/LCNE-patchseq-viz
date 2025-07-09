@@ -646,11 +646,22 @@ class ScatterPlot:
                         if hasattr(color_mapper, 'factors') and hasattr(color_mapper, 'palette'):
                             color_palette_dict = dict(zip(color_mapper.factors, color_mapper.palette))
 
-                    # Count number of samples per group
+                    # Count number of samples per group (valid data)
                     group_counts = plot_df[color_col].value_counts().to_dict()
-                    # Create a mapping from original group name to "group (n = xxx)"
+                    
+                    # Count missing data (NaN) per group from original dataframe
+                    group_nan_counts = {}
+                    for group in group_counts.keys():
+                        # Get all rows for this group from original dataframe
+                        group_mask = df_to_use[color_col] == group
+                        # Count NaN values in y_col for this group
+                        nan_count = df_to_use.loc[group_mask, y_col].isna().sum()
+                        group_nan_counts[group] = nan_count
+                    
+                    # Create a mapping from original group name to "group (n = valid, nan = missing)"
                     group_labels = {
-                        group: f"{group} (n = {count})" for group, count in group_counts.items()
+                        group: f"{group} (n = {count}, missing {group_nan_counts.get(group, 0)})" 
+                        for group, count in group_counts.items()
                     }
                     # Add a new column for legend labels
                     plot_df["_legend_label"] = plot_df[color_col].map(group_labels)
