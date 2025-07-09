@@ -570,11 +570,66 @@ class ScatterPlot:
         count_nan.insert(0, "Total", count_nan.sum(axis=1))
         count_nan.index = pd.Index(["X", "Y"], name="Missing Data")
 
-        # --- Create marginalized histograms to compare aross colors ---
+        # --- Create marginalized histograms to compare across colors ---
+        marginalized_histograms, _ = self.create_marginalized_histograms(
+            df_to_use, y_col, color_col, color_palette, temp_color_mapping, p, font_size
+        )
+        
+        # Perform pairwise statistical tests
+        # Drop NA for y_col and color_col for statistical tests
+        plot_df_for_stats = df_to_use[[y_col, color_col]].dropna() if (y_col != "Date" and y_col != "None" and color_col != "None") else pd.DataFrame()
+        pvalues_table = self.perform_pairwise_statistical_tests(plot_df_for_stats, y_col, color_col) if not plot_df_for_stats.empty else pn.pane.Markdown("**No statistical tests available**")
 
+        # Create grid layout
+        layout = pn.Row(
+            pn.Column(
+                gridplot(
+                    [[y_hist, p], [None, x_hist]],
+                    toolbar_location="right",
+                    merge_tools=True,
+                    toolbar_options={"logo": None},
+                ),
+                pn.pane.Markdown(count_non_nan.to_markdown()),
+                pn.pane.Markdown(count_nan.to_markdown()),
+                sizing_mode="stretch_width",
+            ),
+            pn.Spacer(width=20),
+            pn.Column(
+                marginalized_histograms,
+                pvalues_table,
+                sizing_mode="fixed",
+                width=520,
+            ),
+        )
+        return layout
+
+    def create_marginalized_histograms(
+        self,
+        df_to_use: pd.DataFrame,
+        y_col: str,
+        color_col: str,
+        color_palette: str,
+        temp_color_mapping: ColorMapping,
+        p: figure,
+        font_size: int
+    ) -> Tuple[Any, Any]:
+        """Create marginalized histograms to compare data across color groups.
+        
+        Args:
+            df_to_use: DataFrame containing the data
+            y_col: Column name for y-axis variable
+            color_col: Column name for color grouping
+            color_palette: Color palette name
+            temp_color_mapping: ColorMapping instance for this data
+            p: Bokeh figure (used for color mapping extraction)
+            font_size: Font size for labels
+            
+        Returns:
+            Tuple of (marginalized_histograms, None) - Creates KDE plots with mean±SEM
+        """
         # Prepare marginalized histogram using seaborn's histplot (KDE) for y_col by color_col
         marginalized_histograms = pn.pane.Markdown("No marginalized histogram available.")
-        pvalues_table = pn.pane.Markdown("**No statistical tests available**")
+        
         try:
             if y_col != "Date" and y_col != "None" and color_col != "None":
                 fig, ax = plt.subplots(figsize=(4, 3.5), dpi=300)
@@ -668,59 +723,62 @@ class ScatterPlot:
                         fontsize="small",
                         title=color_col,
                     )
-                     # Use Panel's matplotlib pane instead of manual base64 conversion
+                    # Use Panel's matplotlib pane instead of manual base64 conversion
                     marginalized_histograms = pn.pane.Matplotlib(fig, tight=True, width=500)
-                    
-                    # Perform pairwise Mann-Whitney U tests
-                    pairwise_tests = {}
-                    groups = list(plot_df[color_col].unique())
-                    
-                    for group1, group2 in combinations(groups, 2):
-                        data1 = pd.to_numeric(plot_df[plot_df[color_col] == group1][y_col], errors='coerce').dropna()
-                        data2 = pd.to_numeric(plot_df[plot_df[color_col] == group2][y_col], errors='coerce').dropna()
-                        
-                        if len(data1) > 0 and len(data2) > 0:
-                            try:
-                                statistic, p_value = mannwhitneyu(data1, data2, alternative='two-sided')
-                                pairwise_tests[f"{group1} vs {group2}"] = p_value
-                            except Exception as e:
-                                logger.warning(f"Could not perform Mann-Whitney U test for {group1} vs {group2}: {e}")
-                                pairwise_tests[f"{group1} vs {group2}"] = np.nan
-                    
-                    # Create a table of p-values
-                    if pairwise_tests:
-                        pvalues_df = pd.DataFrame(list(pairwise_tests.items()), columns=['Comparison', 'p-value'])
-                        pvalues_df['p-value'] = pvalues_df['p-value'].apply(lambda x: f"{x:.3e}" if not pd.isna(x) else "NaN")
-                        pvalues_table = pn.pane.Markdown(
-                            f"**Mann-Whitney U Test (pairwise comparisons)**\n\n{pvalues_df.to_markdown(index=False)}"
-                        )
-                    else:
-                        pvalues_table = pn.pane.Markdown("**No pairwise comparisons available**")
                     
         except Exception as e:
             logger.warning(f"Could not create marginalized KDE histogram: {e}")
             marginalized_histograms = pn.pane.Markdown("Marginalized histogram error.")
-            pvalues_table = pn.pane.Markdown("**No statistical tests available**")
+        
+        return marginalized_histograms, None
 
-        # Create grid layout
-        layout = pn.Row(
-            pn.Column(
-                gridplot(
-                    [[y_hist, p], [None, x_hist]],
-                    toolbar_location="right",
-                    merge_tools=True,
-                    toolbar_options={"logo": None},
-                ),
-                pn.pane.Markdown(count_non_nan.to_markdown()),
-                pn.pane.Markdown(count_nan.to_markdown()),
-                sizing_mode="stretch_width",
-            ),
-            pn.Spacer(width=20),
-            pn.Column(
-                marginalized_histograms,
-                pvalues_table,
-                sizing_mode="fixed",
-                width=520,
-            ),
-        )
-        return layout
+    def perform_pairwise_statistical_tests(
+        self,
+        plot_df: pd.DataFrame,
+        y_col: str,
+        color_col: str
+    ) -> Any:
+        """Perform pairwise Mann-Whitney U tests between groups.
+        
+        Args:
+            plot_df: DataFrame containing the cleaned data
+            y_col: Column name for y-axis variable
+            color_col: Column name for color grouping
+            
+        Returns:
+            Panel markdown object with statistical test results
+        """
+        pvalues_table = pn.pane.Markdown("**No statistical tests available**")
+        
+        try:
+            # Perform pairwise Mann-Whitney U tests
+            pairwise_tests = {}
+            groups = list(plot_df[color_col].unique())
+            
+            for group1, group2 in combinations(groups, 2):
+                data1 = pd.to_numeric(plot_df[plot_df[color_col] == group1][y_col], errors='coerce').dropna()
+                data2 = pd.to_numeric(plot_df[plot_df[color_col] == group2][y_col], errors='coerce').dropna()
+                
+                if len(data1) > 0 and len(data2) > 0:
+                    try:
+                        statistic, p_value = mannwhitneyu(data1, data2, alternative='two-sided')
+                        pairwise_tests[f"{group1} vs {group2}"] = p_value
+                    except Exception as e:
+                        logger.warning(f"Could not perform Mann-Whitney U test for {group1} vs {group2}: {e}")
+                        pairwise_tests[f"{group1} vs {group2}"] = np.nan
+            
+            # Create a table of p-values
+            if pairwise_tests:
+                pvalues_df = pd.DataFrame(list(pairwise_tests.items()), columns=['Comparison', 'p-value'])
+                pvalues_df['p-value'] = pvalues_df['p-value'].apply(lambda x: f"{x:.3e}" if not pd.isna(x) else "NaN")
+                pvalues_table = pn.pane.Markdown(
+                    f"**Mann-Whitney U Test (pairwise comparisons)**\n\n{pvalues_df.to_markdown(index=False)}"
+                )
+            else:
+                pvalues_table = pn.pane.Markdown("**No pairwise comparisons available**")
+                
+        except Exception as e:
+            logger.warning(f"Could not perform pairwise statistical tests: {e}")
+            pvalues_table = pn.pane.Markdown("**Statistical test error**")
+        
+        return pvalues_table
