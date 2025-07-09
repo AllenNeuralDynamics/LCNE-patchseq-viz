@@ -905,16 +905,13 @@ class ScatterPlot:
                                 else:
                                     sem_val = 0.0
 
-                                # Get color for this group
-                                group_color = color_palette_dict.get(group, 'black') if color_palette_dict else 'black'
-
                                 # Plot mean as a larger point
-                                ax.plot(i, mean_val, 'D', color='white', markersize=8, 
-                                       markeredgecolor=group_color, markeredgewidth=2, zorder=10)
+                                ax.plot(i, mean_val, 'o', color='black', markersize=5, 
+                                       markeredgecolor='black', markeredgewidth=2, zorder=10)
 
                                 # Add error bar for SEM
                                 if sem_val > 0.0:
-                                    ax.errorbar(i, mean_val, yerr=sem_val, color=group_color, 
+                                    ax.errorbar(i, mean_val, yerr=sem_val, color='black', 
                                               capsize=5, capthick=2, elinewidth=2, zorder=9,
                                               fmt='none')
 
@@ -923,7 +920,7 @@ class ScatterPlot:
                             f"{group}\n(n={group_counts.get(group, 0)}, missing {group_nan_counts.get(group, 0)})" 
                             for group in groups
                         ]
-                        ax.set_xticklabels(group_labels_with_counts, rotation=45, ha='right')
+                        ax.set_xticklabels(group_labels_with_counts, rotation=30, ha='right')
                         ax.set_ylabel(y_col)
                         ax.set_xlabel(color_col)
                         ax.set_title(f'Distribution of {y_col} across {color_col}')
