@@ -85,7 +85,7 @@ class ScatterPlot:
             "x_axis_select": pn.widgets.Select(
                 name="X Axis",
                 options=all_cols,
-                value=[col for col in all_cols if "Date" in col][0],
+                value=[col for col in all_cols if "Y" in col][0],
                 sizing_mode="stretch_width",
             ),
             "y_axis_select": pn.widgets.Select(
@@ -94,7 +94,7 @@ class ScatterPlot:
                 value=[
                     col
                     for col in all_cols
-                    if "efel_AP_duration_half_width @ long_square_rheo, min" in col
+                    if "ipfx_tau" in col
                 ][0],
                 sizing_mode="stretch_width",
             ),
@@ -113,7 +113,7 @@ class ScatterPlot:
             "size_col_select": pn.widgets.Select(
                 name="Size By",
                 options=all_cols,
-                value=[col for col in all_cols if "efel_sag_ratio1 @ subthreshold, aver" in col][0],
+                value="None",
                 sizing_mode="stretch_width",
             ),
             "size_range_slider": pn.widgets.RangeSlider(

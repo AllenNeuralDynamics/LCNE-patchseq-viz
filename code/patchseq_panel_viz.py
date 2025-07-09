@@ -629,7 +629,7 @@ class PatchSeqNWBApp(param.Parameterized):
         # --- Connect global filter components ---
         filter_query = pn.widgets.TextAreaInput(
             name="Query string",
-            value="`jem-status_reporter` == 'Positive' & `injection region` != 'Non-Retro'",
+            value="`jem-status_reporter` == 'Positive' & `injection region` not in ['Non-Retro', 'Thalamus']",
             placeholder="Enter a pandas query string",
             sizing_mode="stretch_width",
             height=100,
