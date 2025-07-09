@@ -23,6 +23,8 @@ from LCNE_patchseq_analysis.pipeline_util.s3 import get_public_url_cell_summary
 from components.color_mapping import ColorMapping
 from components.size_mapping import SizeMapping
 
+# Set seaborn style
+sns.set_context("paper")
 
 logger = logging.getLogger(__name__)
 
@@ -574,12 +576,12 @@ class ScatterPlot:
         marginalized_histograms, _ = self.create_marginalized_histograms(
             df_to_use, y_col, color_col, color_palette, temp_color_mapping, p, font_size
         )
-        
+
         # --- Create violin plot to compare across injection regions ---
         violin_plot = self.create_violin_plot(
             df_to_use, y_col, color_col, color_palette, temp_color_mapping, p, font_size
         )
-        
+
         # Perform pairwise statistical tests
         # Drop NA for y_col and color_col for statistical tests
         plot_df_for_stats = df_to_use[[y_col, color_col]].dropna() if (y_col != "Date" and y_col != "None" and color_col != "None") else pd.DataFrame()
@@ -600,12 +602,12 @@ class ScatterPlot:
             ),
             pn.Spacer(width=20),
             pn.Column(
-                marginalized_histograms,
+                violin_plot,
                 pvalues_table,
                 pn.Spacer(height=20),
-                violin_plot,
+                marginalized_histograms,
                 sizing_mode="fixed",
-                width=620,
+                width=400,
             ),
         )
         return layout
@@ -636,7 +638,7 @@ class ScatterPlot:
         """
         # Prepare marginalized histogram using seaborn's histplot (KDE) for y_col by color_col
         marginalized_histograms = pn.pane.Markdown("No marginalized histogram available.")
-        
+
         try:
             if y_col != "Date" and y_col != "None" and color_col != "None":
                 fig, ax = plt.subplots(figsize=(4, 3.5), dpi=300)
@@ -655,7 +657,7 @@ class ScatterPlot:
 
                     # Count number of samples per group (valid data)
                     group_counts = plot_df[color_col].value_counts().to_dict()
-                    
+
                     # Count missing data (NaN) per group from original dataframe
                     group_nan_counts = {}
                     for group in group_counts.keys():
@@ -664,7 +666,7 @@ class ScatterPlot:
                         # Count NaN values in y_col for this group
                         nan_count = df_to_use.loc[group_mask, y_col].isna().sum()
                         group_nan_counts[group] = nan_count
-                    
+
                     # Create a mapping from original group name to "group (n = valid, nan = missing)"
                     group_labels = {
                         group: f"{group} (n = {count}, missing {group_nan_counts.get(group, 0)})" 
@@ -686,7 +688,7 @@ class ScatterPlot:
                     )
                     sns.despine(trim=True)
                     ax.set_xlabel(y_col)
-                    
+
                     # Compute mean ± SEM for each group and add as dot + errorbar
                     y_positions = []  # Track y positions for staggering
                     for i, (group, data_subset) in enumerate(plot_df.groupby(color_col)):
@@ -702,20 +704,20 @@ class ScatterPlot:
                                         sem_val = float(np.std(numeric_values, ddof=1) / np.sqrt(len(numeric_values)))
                                     else:
                                         sem_val = 0.0
-                                    
+
                                     # Get color for this group
                                     group_color = color_palette_dict.get(group, 'black') if color_palette_dict else 'black'
-                                    
+
                                     # Stagger y position slightly for each group
                                     # Compute y position as 10% + i * 10% of the current ylim range
                                     ylim = ax.get_ylim()
                                     y_pos = ylim[0] + 0.05 * (ylim[1] - ylim[0]) + i * 0.05 * (ylim[1] - ylim[0])
                                     y_positions.append(y_pos)
-                                    
+
                                     # Add dot for mean
                                     ax.plot(mean_val, y_pos, 'o', color=group_color, markersize=4, 
                                             markeredgewidth=1)
-                                    
+
                                     # Add error bar for SEM
                                     if sem_val > 0.0:
                                         ax.errorbar(mean_val, y_pos, xerr=sem_val, color=group_color, 
@@ -723,13 +725,13 @@ class ScatterPlot:
                             except (ValueError, TypeError):
                                 # Skip non-numeric data
                                 continue
-                    
+
                     # Adjust y-axis limits to accommodate the error bars
                     current_ylim = ax.get_ylim()
                     if y_positions:
                         max_y_pos = max(y_positions)
                         ax.set_ylim(current_ylim[0], max(current_ylim[1], max_y_pos + 0.02))
-                    
+
                     # Move legend to top of the plot
                     y_lim = ax.get_ylim()
                     sns.move_legend(
@@ -742,12 +744,12 @@ class ScatterPlot:
                         title=color_col,
                     )
                     # Use Panel's matplotlib pane instead of manual base64 conversion
-                    marginalized_histograms = pn.pane.Matplotlib(fig, tight=True, width=500)
-                    
+                    marginalized_histograms = pn.pane.Matplotlib(fig, format="svg")
+
         except Exception as e:
             logger.warning(f"Could not create marginalized KDE histogram: {e}")
             marginalized_histograms = pn.pane.Markdown("Marginalized histogram error.")
-        
+
         return marginalized_histograms, None
 
     def perform_pairwise_statistical_tests(
@@ -767,16 +769,16 @@ class ScatterPlot:
             Panel markdown object with statistical test results
         """
         pvalues_table = pn.pane.Markdown("**No statistical tests available**")
-        
+
         try:
             # Perform pairwise Mann-Whitney U tests
             pairwise_tests = {}
             groups = list(plot_df[color_col].unique())
-            
+
             for group1, group2 in combinations(groups, 2):
                 data1 = pd.to_numeric(plot_df[plot_df[color_col] == group1][y_col], errors='coerce').dropna()
                 data2 = pd.to_numeric(plot_df[plot_df[color_col] == group2][y_col], errors='coerce').dropna()
-                
+
                 if len(data1) > 0 and len(data2) > 0:
                     try:
                         statistic, p_value = mannwhitneyu(data1, data2, alternative='two-sided')
@@ -784,7 +786,7 @@ class ScatterPlot:
                     except Exception as e:
                         logger.warning(f"Could not perform Mann-Whitney U test for {group1} vs {group2}: {e}")
                         pairwise_tests[f"{group1} vs {group2}"] = np.nan
-            
+
             # Create a table of p-values
             if pairwise_tests:
                 pvalues_df = pd.DataFrame(list(pairwise_tests.items()), columns=['Comparison', 'p-value'])
@@ -794,11 +796,11 @@ class ScatterPlot:
                 )
             else:
                 pvalues_table = pn.pane.Markdown("**No pairwise comparisons available**")
-                
+
         except Exception as e:
             logger.warning(f"Could not perform pairwise statistical tests: {e}")
             pvalues_table = pn.pane.Markdown("**Statistical test error**")
-        
+
         return pvalues_table
 
     def create_violin_plot(
@@ -826,10 +828,10 @@ class ScatterPlot:
             Panel matplotlib object with violin plot
         """
         violin_plot = pn.pane.Markdown("No violin plot available.")
-        
+
         try:
             if y_col != "Date" and y_col != "None" and color_col != "None":
-                fig, ax = plt.subplots(figsize=(6, 4), dpi=300)
+                fig, ax = plt.subplots()
                 # Drop NA for y_col and color_col
                 plot_df = df_to_use[[y_col, color_col]].dropna()
                 if not plot_df.empty:
@@ -845,7 +847,7 @@ class ScatterPlot:
 
                     # Count number of samples per group (valid data)
                     group_counts = plot_df[color_col].value_counts().to_dict()
-                    
+
                     # Count missing data (NaN) per group from original dataframe
                     group_nan_counts = {}
                     for group in group_counts.keys():
@@ -854,59 +856,84 @@ class ScatterPlot:
                         # Count NaN values in y_col for this group
                         nan_count = df_to_use.loc[group_mask, y_col].isna().sum()
                         group_nan_counts[group] = nan_count
-                    
+
                     # Convert y_col to numeric
                     plot_df[y_col] = pd.to_numeric(plot_df[y_col], errors='coerce')
                     plot_df = plot_df.dropna(subset=[y_col])
-                    
+
                     if not plot_df.empty:
-                        # Create violin plot
-                        parts = ax.violinplot(
-                            [plot_df[plot_df[color_col] == group][y_col].values 
-                             for group in sorted(plot_df[color_col].unique())],
-                            positions=range(len(plot_df[color_col].unique())),
-                            showmeans=True,
-                            showmedians=True,
-                            showextrema=False
+                        # Create violin plot using seaborn
+                        sns.violinplot(
+                            data=plot_df,
+                            x=color_col,
+                            y=y_col,
+                            ax=ax,
+                            palette=color_palette_dict,
+                            inner="quart",  # Show quartiles as inner elements
+                            alpha=0.6,
+                            cut=0,  # No extension beyond the data range
                         )
-                        
-                        # Color the violin plots
+
+                        # Overlay raw data points with strip plot
+                        sns.stripplot(
+                            data=plot_df,
+                            x=color_col,
+                            y=y_col,
+                            ax=ax,
+                            color='black',
+                            size=2,
+                            alpha=0.5,
+                            jitter=True
+                        )
+
+                        # Calculate and plot mean ± SEM for each group
                         groups = sorted(plot_df[color_col].unique())
-                        for i, (group, pc) in enumerate(zip(groups, parts['bodies'])):
-                            color = color_palette_dict.get(group, 'lightblue') if color_palette_dict else 'lightblue'
-                            pc.set_facecolor(color)
-                            pc.set_alpha(0.7)
-                        
-                        # Set colors for mean and median lines
-                        if 'cmeans' in parts:
-                            parts['cmeans'].set_colors(['red'])
-                            parts['cmeans'].set_linewidth(2)
-                        if 'cmedians' in parts:
-                            parts['cmedians'].set_colors(['black'])
-                            parts['cmedians'].set_linewidth(2)
-                        
+                        x_positions = range(len(groups))
+
+                        for i, group in enumerate(groups):
+                            group_data = pd.to_numeric(plot_df[plot_df[color_col] == group][y_col], errors='coerce').dropna()
+                            if len(group_data) > 0:
+                                mean_val = float(np.mean(group_data))
+                                if len(group_data) > 1:
+                                    sem_val = float(np.std(group_data, ddof=1) / np.sqrt(len(group_data)))
+                                else:
+                                    sem_val = 0.0
+
+                                # Get color for this group
+                                group_color = color_palette_dict.get(group, 'black') if color_palette_dict else 'black'
+
+                                # Plot mean as a larger point
+                                ax.plot(i, mean_val, 'D', color='white', markersize=8, 
+                                       markeredgecolor=group_color, markeredgewidth=2, zorder=10)
+
+                                # Add error bar for SEM
+                                if sem_val > 0.0:
+                                    ax.errorbar(i, mean_val, yerr=sem_val, color=group_color, 
+                                              capsize=5, capthick=2, elinewidth=2, zorder=9,
+                                              fmt='none')
+
                         # Set x-axis labels with sample counts
                         group_labels_with_counts = [
                             f"{group}\n(n={group_counts.get(group, 0)}, missing {group_nan_counts.get(group, 0)})" 
                             for group in groups
                         ]
-                        ax.set_xticks(range(len(groups)))
                         ax.set_xticklabels(group_labels_with_counts, rotation=45, ha='right')
                         ax.set_ylabel(y_col)
+                        ax.set_xlabel(color_col)
                         ax.set_title(f'Distribution of {y_col} across {color_col}')
-                        
+
                         # Add grid and styling
                         ax.grid(True, alpha=0.3)
                         sns.despine(trim=True)
-                        
+
                         # Adjust layout to prevent label cutoff
                         plt.tight_layout()
-                        
+
                         # Use Panel's matplotlib pane
-                        violin_plot = pn.pane.Matplotlib(fig, tight=True, width=600)
-                    
+                        violin_plot = pn.pane.Matplotlib(fig, dpi=300, format="svg", sizing_mode="stretch_width")
+
         except Exception as e:
             logger.warning(f"Could not create violin plot: {e}")
             violin_plot = pn.pane.Markdown("Violin plot error.")
-        
+
         return violin_plot
