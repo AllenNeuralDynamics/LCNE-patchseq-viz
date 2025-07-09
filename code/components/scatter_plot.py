@@ -875,7 +875,8 @@ class ScatterPlot:
                             inner="quart",  # Show quartiles as inner elements
                             alpha=0.6,
                             cut=0,  # No extension beyond the data range
-                            order=groups_order  # Explicitly set the order
+                            order=groups_order,  # Explicitly set the order
+                            width=0.5
                         )
 
                         # Overlay raw data points with strip plot using the same order
@@ -905,13 +906,14 @@ class ScatterPlot:
                                     sem_val = 0.0
 
                                 # Plot mean as a larger point
-                                ax.plot(i, mean_val, 'o', color='black', markersize=5, 
-                                       markeredgecolor='black', markeredgewidth=2, zorder=10)
+                                group_color = color_palette_dict.get(group, 'black') if color_palette_dict else 'black'
+                                ax.plot(i+0.45, mean_val, 'o', color=group_color, markersize=5, 
+                                       markeredgecolor='black', markeredgewidth=1, zorder=10)
 
                                 # Add error bar for SEM
                                 if sem_val > 0.0:
-                                    ax.errorbar(i, mean_val, yerr=sem_val, color='black', 
-                                              capsize=5, capthick=2, elinewidth=2, zorder=9,
+                                    ax.errorbar(i+0.45, mean_val, yerr=sem_val, color='black', 
+                                              capsize=5, capthick=1, elinewidth=1, zorder=9,
                                               fmt='none')
 
                         # Set x-axis labels with sample counts
