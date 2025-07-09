@@ -862,7 +862,11 @@ class ScatterPlot:
                     plot_df = plot_df.dropna(subset=[y_col])
 
                     if not plot_df.empty:
-                        # Create violin plot using seaborn
+                        # Get the order of groups to ensure consistency between violin plot and overlays
+                        # Use sorted order to match seaborn's default behavior
+                        groups_order = sorted(plot_df[color_col].unique())
+                        
+                        # Create violin plot using seaborn with explicit order
                         sns.violinplot(
                             data=plot_df,
                             x=color_col,
@@ -872,9 +876,10 @@ class ScatterPlot:
                             inner="quart",  # Show quartiles as inner elements
                             alpha=0.6,
                             cut=0,  # No extension beyond the data range
+                            order=groups_order  # Explicitly set the order
                         )
 
-                        # Overlay raw data points with strip plot
+                        # Overlay raw data points with strip plot using the same order
                         sns.stripplot(
                             data=plot_df,
                             x=color_col,
@@ -883,11 +888,12 @@ class ScatterPlot:
                             color='black',
                             size=2,
                             alpha=0.5,
-                            jitter=True
+                            jitter=True,
+                            order=groups_order  # Use the same order
                         )
 
-                        # Calculate and plot mean ± SEM for each group
-                        groups = sorted(plot_df[color_col].unique())
+                        # Calculate and plot mean ± SEM for each group using the same order
+                        groups = groups_order  # Use the same order as seaborn plots
                         x_positions = range(len(groups))
 
                         for i, group in enumerate(groups):
