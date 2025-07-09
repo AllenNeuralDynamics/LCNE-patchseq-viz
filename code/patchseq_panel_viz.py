@@ -675,15 +675,23 @@ class PatchSeqNWBApp(param.Parameterized):
             pn.pane.Markdown("### Global Filter", css_classes=["card-title"]),
             pn.pane.Markdown(
                 """
-                    Enter a pandas query to filter cells. Examples:
-                    - `` `jem-status_reporter` == "Positive"``
-                    - `` `injection region` != 'Non-Retro' ``
-                    - `` `gene_Dbh (log_normed)` > 0 or `gene_Th (log_normed)` > 0 or
+                    #### Enter a pandas query to filter cells. Examples:
+                    LC targeting
+                    -  (Only retro cells) `` `injection region` != 'Non-Retro' ``
+
+                    Gene QC
+                    -  (Nucleus present) `` `jem-nucleus_post_patch` == "nucleus_present" ``
+                    -  (QC based on mitochondrial RNA) `` `gene_RNA_QC (log_normed)` == True ``
+
+                    Gene expression
+                    -  (Fluorescence+) `` `jem-status_reporter` == "Positive" ``
+                    -  (Dbh subclass) `` mapmycells_subclass_name.str.contains("DBH", case=False, na=False) ``
+                    -  (Marker genes any positive) `` `gene_Dbh (log_normed)` > 0 or `gene_Th (log_normed)` > 0 or
                          `gene_Slc18a2 (log_normed)` > 0 or `gene_Slc6a2 (log_normed)` > 0 ``
-                    - `` `gene_Dbh (log_normed)` > 0 and `gene_Th (log_normed)` > 0 ``
-                    - `` mapmycells_subclass_name.str.contains("DBH", case=False, na=False) ``
-                    - `` `jem-nucleus_post_patch` == "nucleus_present" ``
-                    - `` `X (A --> P)` > 9500 and `X (A --> P)` < 11500 and
+                    -  (Dbh+) `` `gene_Dbh (log_normed)` > 0 ``
+
+                    Location
+                    -  `` `X (A --> P)` > 9500 and `X (A --> P)` < 11500 and
                          `Y (D --> V)` > 2500 and `Y (D --> V)` < 6000 ``
                     """
             ),
@@ -692,7 +700,7 @@ class PatchSeqNWBApp(param.Parameterized):
                 pn.Row(filter_button, reset_button),
             ),
             filter_status,
-            width=600,
+            width=800,
             margin=(0, 100, 50, 0),  # top, right, bottom, left margins in pixels
             css_classes=["card", "p-4", "m-4"],
         )
