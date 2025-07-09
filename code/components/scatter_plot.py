@@ -598,16 +598,12 @@ class ScatterPlot:
                 ),
                 pn.pane.Markdown(count_non_nan.to_markdown()),
                 pn.pane.Markdown(count_nan.to_markdown()),
-                sizing_mode="stretch_width",
             ),
-            pn.Spacer(width=20),
             pn.Column(
                 violin_plot,
                 pvalues_table,
                 pn.Spacer(height=20),
                 marginalized_histograms,
-                sizing_mode="fixed",
-                width=400,
             ),
         )
         return layout
@@ -744,7 +740,7 @@ class ScatterPlot:
                         title=color_col,
                     )
                     # Use Panel's matplotlib pane instead of manual base64 conversion
-                    marginalized_histograms = pn.pane.Matplotlib(fig, format="svg")
+                    marginalized_histograms = pn.pane.Matplotlib(fig, dpi=300, tight=True, width=400)
 
         except Exception as e:
             logger.warning(f"Could not create marginalized KDE histogram: {e}")
@@ -831,7 +827,7 @@ class ScatterPlot:
 
         try:
             if y_col != "Date" and y_col != "None" and color_col != "None":
-                fig, ax = plt.subplots()
+                fig, ax = plt.subplots(figsize=(5, 4), dpi=300)
                 # Drop NA for y_col and color_col
                 plot_df = df_to_use[[y_col, color_col]].dropna()
                 if not plot_df.empty:
@@ -926,14 +922,13 @@ class ScatterPlot:
                         ax.set_title(f'Distribution of {y_col} across {color_col}')
 
                         # Add grid and styling
-                        ax.grid(True, alpha=0.3)
                         sns.despine(trim=True)
 
                         # Adjust layout to prevent label cutoff
                         plt.tight_layout()
 
                         # Use Panel's matplotlib pane
-                        violin_plot = pn.pane.Matplotlib(fig, dpi=300, format="svg", sizing_mode="stretch_width")
+                        violin_plot = pn.pane.Matplotlib(fig, dpi=300, tight=True, width=400)
 
         except Exception as e:
             logger.warning(f"Could not create violin plot: {e}")
