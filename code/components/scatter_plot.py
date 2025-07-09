@@ -483,9 +483,12 @@ class ScatterPlot:
                     (f"Linear Fit (p = {p_value:.3e}, R² = {r_value**2:.3f})", [line]),
                 ]
                 legend = Legend(
-                    items=legend_items, location="top_left", label_text_font_size=f"{font_size-2}pt"
+                    items=legend_items, 
+                    location="top_left", 
+                    label_text_font_size=f"{font_size-2}pt"
                 )
-                p.add_layout(legend)
+                legend.click_policy = "hide"
+                p.add_layout(legend, 'above')
 
         # Flip the y-axis if y_col is depth
         if y_col == "Y (D --> V)":
