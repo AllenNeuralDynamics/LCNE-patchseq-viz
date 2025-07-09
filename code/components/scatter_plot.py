@@ -924,7 +924,6 @@ class ScatterPlot:
                         ax.set_xticklabels(group_labels_with_counts, rotation=30, ha='right')
                         ax.set_ylabel(y_col)
                         ax.set_xlabel(color_col)
-                        ax.set_title(f'Distribution of {y_col} across {color_col}')
 
                         # Add grid and styling
                         sns.despine(trim=True)
