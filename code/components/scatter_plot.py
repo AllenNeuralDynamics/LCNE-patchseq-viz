@@ -453,7 +453,7 @@ class ScatterPlot:
         )
 
         # Add scatter glyph using the data source
-        p.scatter(x=x_col, y=y_col, source=source, size=size, color=color, alpha=alpha)
+        scatter_glyph = p.scatter(x=x_col, y=y_col, source=source, size=size, color=color, alpha=alpha)
 
         # Add linear regression if requested and both columns are numeric
         if show_linear_fit and x_col != "Date" and x_col != "None" and y_col != "None":
@@ -503,6 +503,7 @@ class ScatterPlot:
             tooltips=tooltips,
             attachment="right",  # Fix tooltip to the right of the plot
             formatters={"@Date": "datetime"},
+            renderers=[scatter_glyph],  # Only apply hover to scatter points, not mesh patches
         )
 
         p.add_tools(hovertool)
@@ -536,14 +537,20 @@ class ScatterPlot:
             # Add LC mesh overlay
             mesh = load_mesh_from_s3()
             lc_mesh_bokeh = trimesh_to_bokeh_data(mesh, direction="sagittal")
-            source = ColumnDataSource(lc_mesh_bokeh)
+            mesh_source = ColumnDataSource(lc_mesh_bokeh)
             p.patches(
-                source=source,
+                source=mesh_source,
                 xs="xs",
                 ys="ys",
                 fill_alpha=0.3,
                 line_color=None,
                 fill_color="lightgray",
+                level="underlay",
+                nonselection_fill_alpha=0.3,
+                nonselection_line_alpha=0,
+                selection_fill_alpha=0.3,
+                selection_line_alpha=0,
+                muted_alpha=0.3,
             )
 
         # Create marginal histograms
