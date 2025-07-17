@@ -386,6 +386,44 @@ class ScatterPlot:
         p.grid.visible = False
         return p
 
+    def add_lc_mesh_overlay(self, p: figure, x_col: str, y_col: str) -> None:
+        """Add LC mesh overlay to the plot based on axis column names.
+        
+        Args:
+            p: Bokeh figure to add the mesh to
+            x_col: X-axis column name
+            y_col: Y-axis column name
+        """
+        # Determine mesh direction based on column names
+        direction = None
+        if x_col.startswith("X ") and y_col.startswith("Y "):
+            direction = "sagittal"
+        elif x_col.startswith("Z "):
+            direction = "coronal"
+        
+        if direction is not None:
+            try:
+                # Load and add LC mesh overlay
+                mesh = load_mesh_from_s3()
+                lc_mesh_bokeh = trimesh_to_bokeh_data(mesh, direction=direction)
+                mesh_source = ColumnDataSource(lc_mesh_bokeh)
+                p.patches(
+                    source=mesh_source,
+                    xs="xs",
+                    ys="ys",
+                    fill_alpha=0.3,
+                    line_color=None,
+                    fill_color="lightgray",
+                    level="underlay",
+                    nonselection_fill_alpha=0.3,
+                    nonselection_line_alpha=0,
+                    selection_fill_alpha=0.3,
+                    selection_line_alpha=0,
+                    muted_alpha=0.3,
+                )
+            except Exception as e:
+                logger.warning(f"Could not add LC mesh overlay: {e}")
+
     def update_scatter_plot(  # noqa: C901
         self,
         x_col: str,
@@ -532,26 +570,8 @@ class ScatterPlot:
         p.xaxis.major_label_text_font_size = f"{font_size*0.9}pt"
         p.yaxis.major_label_text_font_size = f"{font_size*0.9}pt"
 
-        # -- add LC mesh if X starts with "X " and Y starts with "Y " --
-        if x_col.startswith("X ") and y_col.startswith("Y "):
-            # Add LC mesh overlay
-            mesh = load_mesh_from_s3()
-            lc_mesh_bokeh = trimesh_to_bokeh_data(mesh, direction="sagittal")
-            mesh_source = ColumnDataSource(lc_mesh_bokeh)
-            p.patches(
-                source=mesh_source,
-                xs="xs",
-                ys="ys",
-                fill_alpha=0.3,
-                line_color=None,
-                fill_color="lightgray",
-                level="underlay",
-                nonselection_fill_alpha=0.3,
-                nonselection_line_alpha=0,
-                selection_fill_alpha=0.3,
-                selection_line_alpha=0,
-                muted_alpha=0.3,
-            )
+        # Add LC mesh overlay if appropriate columns are selected
+        self.add_lc_mesh_overlay(p, x_col, y_col)
 
         # Create marginal histograms
         x_hist = None
