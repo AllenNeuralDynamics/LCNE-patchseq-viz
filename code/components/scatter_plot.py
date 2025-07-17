@@ -20,6 +20,9 @@ from sklearn.mixture import GaussianMixture
 from itertools import combinations
 
 from LCNE_patchseq_analysis.pipeline_util.s3 import get_public_url_cell_summary
+from LCNE_patchseq_analysis.pipeline_util.s3 import load_mesh_from_s3
+from LCNE_patchseq_analysis.data_util.mesh import trimesh_to_bokeh_data
+
 from components.color_mapping import ColorMapping
 from components.size_mapping import SizeMapping
 
@@ -528,6 +531,21 @@ class ScatterPlot:
         p.xaxis.major_label_text_font_size = f"{font_size*0.9}pt"
         p.yaxis.major_label_text_font_size = f"{font_size*0.9}pt"
 
+        # -- add LC mesh if X starts with "X " and Y starts with "Y " --
+        if x_col.startswith("X ") and y_col.startswith("Y "):
+            # Add LC mesh overlay
+            mesh = load_mesh_from_s3()
+            lc_mesh_bokeh = trimesh_to_bokeh_data(mesh, direction="sagittal")
+            source = ColumnDataSource(lc_mesh_bokeh)
+            p.patches(
+                source=source,
+                xs="xs",
+                ys="ys",
+                fill_alpha=0.3,
+                line_color=None,
+                fill_color="lightgray",
+            )
+
         # Create marginal histograms
         x_hist = None
         try:
@@ -606,7 +624,7 @@ class ScatterPlot:
                 violin_plot,
                 pvalues_table,
                 pn.Spacer(height=20),
-                marginalized_histograms,
+                # marginalized_histograms,
             ),
         )
         return layout
@@ -864,7 +882,7 @@ class ScatterPlot:
                         # Get the order of groups to ensure consistency between violin plot and overlays
                         # Use sorted order to match seaborn's default behavior
                         groups_order = sorted(plot_df[color_col].unique())
-                        
+
                         # Create violin plot using seaborn with explicit order
                         sns.violinplot(
                             data=plot_df,
