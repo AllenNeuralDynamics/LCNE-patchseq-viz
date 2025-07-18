@@ -620,20 +620,25 @@ class ScatterPlot:
         count_nan.insert(0, "Total", count_nan.sum(axis=1))
         count_nan.index = pd.Index(["X", "Y"], name="Missing Data")
 
-        # --- Create marginalized histograms to compare across colors ---
-        marginalized_histograms, _ = self.create_marginalized_histograms(
-            df_to_use, y_col, color_col, color_palette, temp_color_mapping, p, font_size
-        )
+        # If the color column is categorical, generate violin plot and pairwise statistical tests
+        if color_col in self.df_meta.select_dtypes(include=["object"]).columns:
+            # --- Create marginalized histograms to compare across colors ---
+            # marginalized_histograms, _ = self.create_marginalized_histograms(
+            #     df_to_use, y_col, color_col, color_palette, temp_color_mapping, p, font_size
+            # )
 
-        # --- Create violin plot to compare across injection regions ---
-        violin_plot = self.create_violin_plot(
-            df_to_use, y_col, color_col, color_palette, temp_color_mapping, p, font_size
-        )
+            # --- Create violin plot to compare across injection regions ---
+            violin_plot = self.create_violin_plot(
+                df_to_use, y_col, color_col, color_palette, temp_color_mapping, p, font_size
+            )
 
-        # Perform pairwise statistical tests
-        # Drop NA for y_col and color_col for statistical tests
-        plot_df_for_stats = df_to_use[[y_col, color_col]].dropna() if (y_col != "Date" and y_col != "None" and color_col != "None") else pd.DataFrame()
-        pvalues_table = self.perform_pairwise_statistical_tests(plot_df_for_stats, y_col, color_col) if not plot_df_for_stats.empty else pn.pane.Markdown("**No statistical tests available**")
+            # Perform pairwise statistical tests
+            # Drop NA for y_col and color_col for statistical tests
+            plot_df_for_stats = df_to_use[[y_col, color_col]].dropna() if (y_col != "Date" and y_col != "None" and color_col != "None") else pd.DataFrame()
+            pvalues_table = self.perform_pairwise_statistical_tests(plot_df_for_stats, y_col, color_col) if not plot_df_for_stats.empty else pn.pane.Markdown("**No statistical tests available**")
+        else:
+            violin_plot = pn.pane.Markdown("**Violin plot only available for categorical color columns**")
+            pvalues_table = pn.pane.Markdown("")
 
         # Create grid layout
         layout = pn.Row(
