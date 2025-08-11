@@ -20,6 +20,9 @@ from sklearn.mixture import GaussianMixture
 from itertools import combinations
 
 from LCNE_patchseq_analysis.pipeline_util.s3 import get_public_url_cell_summary
+from LCNE_patchseq_analysis.pipeline_util.s3 import load_mesh_from_s3
+from LCNE_patchseq_analysis.data_util.mesh import trimesh_to_bokeh_data
+
 from components.color_mapping import ColorMapping
 from components.size_mapping import SizeMapping
 
@@ -383,6 +386,44 @@ class ScatterPlot:
         p.grid.visible = False
         return p
 
+    def add_lc_mesh_overlay(self, p: figure, x_col: str, y_col: str) -> None:
+        """Add LC mesh overlay to the plot based on axis column names.
+        
+        Args:
+            p: Bokeh figure to add the mesh to
+            x_col: X-axis column name
+            y_col: Y-axis column name
+        """
+        # Determine mesh direction based on column names
+        direction = None
+        if x_col.startswith("X ") and y_col.startswith("Y "):
+            direction = "sagittal"
+        elif x_col.startswith("Z "):
+            direction = "coronal"
+        
+        if direction is not None:
+            try:
+                # Load and add LC mesh overlay
+                mesh = load_mesh_from_s3()
+                lc_mesh_bokeh = trimesh_to_bokeh_data(mesh, direction=direction)
+                mesh_source = ColumnDataSource(lc_mesh_bokeh)
+                p.patches(
+                    source=mesh_source,
+                    xs="xs",
+                    ys="ys",
+                    fill_alpha=0.3,
+                    line_color=None,
+                    fill_color="lightgray",
+                    level="underlay",
+                    nonselection_fill_alpha=0.3,
+                    nonselection_line_alpha=0,
+                    selection_fill_alpha=0.3,
+                    selection_line_alpha=0,
+                    muted_alpha=0.3,
+                )
+            except Exception as e:
+                logger.warning(f"Could not add LC mesh overlay: {e}")
+
     def update_scatter_plot(  # noqa: C901
         self,
         x_col: str,
@@ -450,7 +491,7 @@ class ScatterPlot:
         )
 
         # Add scatter glyph using the data source
-        p.scatter(x=x_col, y=y_col, source=source, size=size, color=color, alpha=alpha)
+        scatter_glyph = p.scatter(x=x_col, y=y_col, source=source, size=size, color=color, alpha=alpha)
 
         # Add linear regression if requested and both columns are numeric
         if show_linear_fit and x_col != "Date" and x_col != "None" and y_col != "None":
@@ -500,6 +541,7 @@ class ScatterPlot:
             tooltips=tooltips,
             attachment="right",  # Fix tooltip to the right of the plot
             formatters={"@Date": "datetime"},
+            renderers=[scatter_glyph],  # Only apply hover to scatter points, not mesh patches
         )
 
         p.add_tools(hovertool)
@@ -527,6 +569,9 @@ class ScatterPlot:
         # Set major tick label font sizes
         p.xaxis.major_label_text_font_size = f"{font_size*0.9}pt"
         p.yaxis.major_label_text_font_size = f"{font_size*0.9}pt"
+
+        # Add LC mesh overlay if appropriate columns are selected
+        self.add_lc_mesh_overlay(p, x_col, y_col)
 
         # Create marginal histograms
         x_hist = None
@@ -575,20 +620,25 @@ class ScatterPlot:
         count_nan.insert(0, "Total", count_nan.sum(axis=1))
         count_nan.index = pd.Index(["X", "Y"], name="Missing Data")
 
-        # --- Create marginalized histograms to compare across colors ---
-        marginalized_histograms, _ = self.create_marginalized_histograms(
-            df_to_use, y_col, color_col, color_palette, temp_color_mapping, p, font_size
-        )
+        # If the color column is categorical, generate violin plot and pairwise statistical tests
+        if color_col in self.df_meta.select_dtypes(include=["object"]).columns:
+            # --- Create marginalized histograms to compare across colors ---
+            # marginalized_histograms, _ = self.create_marginalized_histograms(
+            #     df_to_use, y_col, color_col, color_palette, temp_color_mapping, p, font_size
+            # )
 
-        # --- Create violin plot to compare across injection regions ---
-        violin_plot = self.create_violin_plot(
-            df_to_use, y_col, color_col, color_palette, temp_color_mapping, p, font_size
-        )
+            # --- Create violin plot to compare across injection regions ---
+            violin_plot = self.create_violin_plot(
+                df_to_use, y_col, color_col, color_palette, temp_color_mapping, p, font_size
+            )
 
-        # Perform pairwise statistical tests
-        # Drop NA for y_col and color_col for statistical tests
-        plot_df_for_stats = df_to_use[[y_col, color_col]].dropna() if (y_col != "Date" and y_col != "None" and color_col != "None") else pd.DataFrame()
-        pvalues_table = self.perform_pairwise_statistical_tests(plot_df_for_stats, y_col, color_col) if not plot_df_for_stats.empty else pn.pane.Markdown("**No statistical tests available**")
+            # Perform pairwise statistical tests
+            # Drop NA for y_col and color_col for statistical tests
+            plot_df_for_stats = df_to_use[[y_col, color_col]].dropna() if (y_col != "Date" and y_col != "None" and color_col != "None") else pd.DataFrame()
+            pvalues_table = self.perform_pairwise_statistical_tests(plot_df_for_stats, y_col, color_col) if not plot_df_for_stats.empty else pn.pane.Markdown("**No statistical tests available**")
+        else:
+            violin_plot = pn.pane.Markdown("**Violin plot only available for categorical color columns**")
+            pvalues_table = pn.pane.Markdown("")
 
         # Create grid layout
         layout = pn.Row(
@@ -606,7 +656,7 @@ class ScatterPlot:
                 violin_plot,
                 pvalues_table,
                 pn.Spacer(height=20),
-                marginalized_histograms,
+                # marginalized_histograms,
             ),
         )
         return layout
@@ -864,7 +914,7 @@ class ScatterPlot:
                         # Get the order of groups to ensure consistency between violin plot and overlays
                         # Use sorted order to match seaborn's default behavior
                         groups_order = sorted(plot_df[color_col].unique())
-                        
+
                         # Create violin plot using seaborn with explicit order
                         sns.violinplot(
                             data=plot_df,

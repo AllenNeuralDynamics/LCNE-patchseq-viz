@@ -118,8 +118,16 @@ class ColorMapping:
                     categorical_palette = all_palettes["Category10"][min(n_categories, 10)]
 
             # Map "None" or NaN factors to "gray"
-            factors = list(self.df_meta[color_mapping].dropna().unique())
+            # Sort factors alphabetically for consistent color assignment
+            factors = sorted(list(self.df_meta[color_mapping].dropna().unique()), reverse=True)
             categorical_palette = list(categorical_palette)
+            
+            # Ensure we have enough colors for all factors
+            if len(categorical_palette) < len(factors):
+                # Extend palette by cycling through colors if needed
+                categorical_palette = categorical_palette * ((len(factors) // len(categorical_palette)) + 1)
+            categorical_palette = categorical_palette[:len(factors)]
+            
             for missing in ["None", "unknown", "seq_data_not_available"]:
                 if missing in factors:
                     categorical_palette[factors.index(missing)] = "gray"
