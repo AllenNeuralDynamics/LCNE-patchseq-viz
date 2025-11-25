@@ -226,6 +226,8 @@ class RawSpikeAnalysis:
         self,
         df_v_norm: pd.DataFrame,
         df_dvdt_norm: pd.DataFrame,
+        df_v_unnorm: pd.DataFrame = None,
+        df_dvdt_unnorm: pd.DataFrame = None,
         n_clusters: int = 2,
         alpha: float = 0.3,
         width: int = 400,
@@ -246,6 +248,16 @@ class RawSpikeAnalysis:
         df_dvdt_norm = df_dvdt_norm.loc[
             :, (df_dvdt_norm.columns >= spike_range[0]) & (df_dvdt_norm.columns <= spike_range[1])
         ]
+        
+        # Filter unnormalized data if provided
+        if df_v_unnorm is not None:
+            df_v_unnorm = df_v_unnorm.loc[
+                :, (df_v_unnorm.columns >= spike_range[0]) & (df_v_unnorm.columns <= spike_range[1])
+            ]
+        if df_dvdt_unnorm is not None:
+            df_dvdt_unnorm = df_dvdt_unnorm.loc[
+                :, (df_dvdt_unnorm.columns >= spike_range[0]) & (df_dvdt_unnorm.columns <= spike_range[1])
+            ]
 
         # Perform dimensionality reduction and clustering
         df_v_proj, clusters, reducer, metrics = self.perform_dim_reduction_clustering(
@@ -282,15 +294,22 @@ class RawSpikeAnalysis:
             **plot_settings,
         )
         p4 = figure(
-            title="Phase Plot",
+            title="Phase Plot (Normalized)",
             x_axis_label="V (normalized)",
             y_axis_label="dV/dt (normalized)",
             tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
             **plot_settings,
         )
+        p5 = figure(
+            title="Phase Plot (Unnormalized)",
+            x_axis_label="V (mV)",
+            y_axis_label="dV/dt (mV/ms)",
+            tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
+            **plot_settings,
+        )
 
         # Update font sizes after figure creation
-        for p in [p1, p2, p3, p4]:
+        for p in [p1, p2, p3, p4, p5]:
             # Set the font sizes for the title and axis labels
             p.title.text_font_size = f"{font_size+2}pt"
             p.xaxis.axis_label_text_font_size = f"{font_size+2}pt"
@@ -464,7 +483,7 @@ class RawSpikeAnalysis:
                 legend_label=group_label,
             )
 
-            # Plot phase plot (dV/dt vs V)
+            # Plot phase plot (dV/dt vs V) - normalized
             df_v_this = df_v_norm.query("ephys_roi_id in @ephys_roi_ids")
             df_dvdt_this = df_dvdt_norm.query("ephys_roi_id in @ephys_roi_ids")
             source = ColumnDataSource(
@@ -482,6 +501,26 @@ class RawSpikeAnalysis:
                 **line_props,
                 legend_label=group_label,
             )
+
+            # Plot phase plot (dV/dt vs V) - unnormalized
+            if df_v_unnorm is not None and df_dvdt_unnorm is not None:
+                df_v_unnorm_this = df_v_unnorm.query("ephys_roi_id in @ephys_roi_ids")
+                df_dvdt_unnorm_this = df_dvdt_unnorm.query("ephys_roi_id in @ephys_roi_ids")
+                source = ColumnDataSource(
+                    {
+                        "xs": df_v_unnorm_this.values.tolist(),
+                        "ys": df_dvdt_unnorm_this.values.tolist(),
+                        "ephys_roi_id": ephys_roi_ids,
+                    }
+                )
+                p5.multi_line(
+                    source=source,
+                    xs="xs",
+                    ys="ys",
+                    color=cluster_colors[i],
+                    **line_props,
+                    legend_label=group_label,
+                )
 
         # Add region cluster_colors to the all plots
         for region in self.df_meta["injection region"].unique():
@@ -535,7 +574,7 @@ class RawSpikeAnalysis:
                 **line_props,
             )
 
-            # Plot phase plot (dV/dt vs V) for regions
+            # Plot phase plot (dV/dt vs V) for regions - normalized
             v_vals = df_v_norm.query("ephys_roi_id in @roi_ids").values
             dvdt_vals = df_dvdt_norm.query("ephys_roi_id in @roi_ids").values
             p4.multi_line(
@@ -546,6 +585,19 @@ class RawSpikeAnalysis:
                 legend_label=legend_label,
                 **line_props,
             )
+
+            # Plot phase plot (dV/dt vs V) for regions - unnormalized
+            if df_v_unnorm is not None and df_dvdt_unnorm is not None:
+                v_vals_unnorm = df_v_unnorm.query("ephys_roi_id in @roi_ids").values
+                dvdt_vals_unnorm = df_dvdt_unnorm.query("ephys_roi_id in @roi_ids").values
+                p5.multi_line(
+                    xs=v_vals_unnorm.tolist(),
+                    ys=dvdt_vals_unnorm.tolist(),
+                    color=REGION_COLOR_MAPPER[region],
+                    alpha=0.8,
+                    legend_label=legend_label,
+                    **line_props,
+                )
 
         # Add tooltips
         # Add renderers like this to solve bug like this:
@@ -572,21 +624,31 @@ class RawSpikeAnalysis:
             attachment="right",
         )
         p4.add_tools(hovertool)
+        
+        hovertool = HoverTool(
+            tooltips=[("ephys_roi_id", "@ephys_roi_id")],
+            attachment="right",
+        )
+        p5.add_tools(hovertool)
 
-        # Add boxzoomtool to p4
+        # Add boxzoomtool to p4 and p5
         box_zoom_x = BoxZoomTool(dimensions="auto")
         p4.add_tools(box_zoom_x)
         p4.toolbar.active_drag = box_zoom_x
+        
+        box_zoom_x = BoxZoomTool(dimensions="auto")
+        p5.add_tools(box_zoom_x)
+        p5.toolbar.active_drag = box_zoom_x
 
-        for p in [p1, p2, p3, p4]:
+        for p in [p1, p2, p3, p4, p5]:
             p.legend.ncols = 2
             p.legend.background_fill_alpha = 0.5
             p.legend.location = "bottom_center"
             p.legend.click_policy = "hide"
             p.legend.orientation = "horizontal"
 
-        # Create grid layout with independent axes - now 2 rows x 2 columns
-        layout = gridplot([[p1, p2], [p4, p3]], toolbar_location="right", merge_tools=False)
+        # Create grid layout with independent axes - now 3 rows x 2 columns
+        layout = gridplot([[p1, p2], [p4, p3], [p5, None]], toolbar_location="right", merge_tools=False)
 
         return layout
 
