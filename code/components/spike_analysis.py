@@ -226,6 +226,8 @@ class RawSpikeAnalysis:
         self,
         df_v_norm: pd.DataFrame,
         df_dvdt_norm: pd.DataFrame,
+        df_v_phase_norm: pd.DataFrame | None = None,
+        df_dvdt_phase_norm: pd.DataFrame | None = None,
         df_v_unnorm: pd.DataFrame = None,
         df_dvdt_unnorm: pd.DataFrame = None,
         n_clusters: int = 2,
@@ -248,6 +250,17 @@ class RawSpikeAnalysis:
         df_dvdt_norm = df_dvdt_norm.loc[
             :, (df_dvdt_norm.columns >= spike_range[0]) & (df_dvdt_norm.columns <= spike_range[1])
         ]
+
+        if df_v_phase_norm is not None:
+            df_v_phase_norm = df_v_phase_norm.loc[
+                :, (df_v_phase_norm.columns >= spike_range[0])
+                & (df_v_phase_norm.columns <= spike_range[1])
+            ]
+        if df_dvdt_phase_norm is not None:
+            df_dvdt_phase_norm = df_dvdt_phase_norm.loc[
+                :, (df_dvdt_phase_norm.columns >= spike_range[0])
+                & (df_dvdt_phase_norm.columns <= spike_range[1])
+            ]
         
         # Filter unnormalized data if provided
         if df_v_unnorm is not None:
@@ -284,9 +297,15 @@ class RawSpikeAnalysis:
         p_embedding = plots["embedding"]
         p_vm = plots["vm"]
         p_dvdt = plots["dvdt"]
+        p_phase_norm = plots["phase_norm"]
         p_phase = plots["phase"]
 
         self._style_subplots(plots.values(), font_size)
+
+        phase_norm_v = df_v_phase_norm if df_v_phase_norm is not None else df_v_norm
+        phase_norm_dvdt = (
+            df_dvdt_phase_norm if df_dvdt_phase_norm is not None else df_dvdt_norm
+        )
 
         # -- Plot PCA scatter with contours --
         # Create a single ColumnDataSource for all clusters
@@ -450,6 +469,26 @@ class RawSpikeAnalysis:
             )
             register_renderer(group_label, renderer)
 
+            # Plot phase plot (dV/dt vs V) - normalized
+            df_v_this = phase_norm_v.query("ephys_roi_id in @ephys_roi_ids")
+            df_dvdt_this = phase_norm_dvdt.query("ephys_roi_id in @ephys_roi_ids")
+            source = ColumnDataSource(
+                {
+                    "xs": df_v_this.values.tolist(),
+                    "ys": df_dvdt_this.values.tolist(),
+                    "ephys_roi_id": ephys_roi_ids,
+                }
+            )
+            renderer = p_phase_norm.multi_line(
+                source=source,
+                xs="xs",
+                ys="ys",
+                color=cluster_colors[i],
+                **line_props,
+                legend_label=group_label,
+            )
+            register_renderer(group_label, renderer)
+
             # Plot phase plot (dV/dt vs V) - unnormalized
             if df_v_unnorm is not None and df_dvdt_unnorm is not None:
                 df_v_unnorm_this = df_v_unnorm.query("ephys_roi_id in @ephys_roi_ids")
@@ -525,6 +564,19 @@ class RawSpikeAnalysis:
             )
             register_renderer(legend_label, renderer)
 
+            # Plot phase plot (dV/dt vs V) for regions - normalized
+            v_vals_norm = phase_norm_v.query("ephys_roi_id in @roi_ids").values
+            dvdt_vals_norm = phase_norm_dvdt.query("ephys_roi_id in @roi_ids").values
+            renderer = p_phase_norm.multi_line(
+                xs=v_vals_norm.tolist(),
+                ys=dvdt_vals_norm.tolist(),
+                color=REGION_COLOR_MAPPER[region],
+                alpha=0.8,
+                legend_label=legend_label,
+                **line_props,
+            )
+            register_renderer(legend_label, renderer)
+
             # Plot phase plot (dV/dt vs V) for regions - unnormalized
             if df_v_unnorm is not None and df_dvdt_unnorm is not None:
                 v_vals_unnorm = df_v_unnorm.query("ephys_roi_id in @roi_ids").values
@@ -563,20 +615,31 @@ class RawSpikeAnalysis:
             tooltips=[("ephys_roi_id", "@ephys_roi_id")],
             attachment="right",
         )
+        p_phase_norm.add_tools(hovertool)
+
+        hovertool = HoverTool(
+            tooltips=[("ephys_roi_id", "@ephys_roi_id")],
+            attachment="right",
+        )
         p_phase.add_tools(hovertool)
         
         # Add boxzoomtool to phase plot
         box_zoom_x = BoxZoomTool(dimensions="auto")
         p_phase.add_tools(box_zoom_x)
         p_phase.toolbar.active_drag = box_zoom_x
+
+        box_zoom_x = BoxZoomTool(dimensions="auto")
+        p_phase_norm.add_tools(box_zoom_x)
+        p_phase_norm.toolbar.active_drag = box_zoom_x
         
         legend_configs = {
             p_vm: {"location": "top_right", "orientation": "vertical", "ncols": 1},
             p_dvdt: {"location": "top_right", "orientation": "vertical", "ncols": 1},
+            p_phase_norm: {"location": "top_left", "orientation": "vertical", "ncols": 1},
             p_phase: {"location": "top_left", "orientation": "vertical", "ncols": 1},
         }
 
-        for p in [p_embedding, p_vm, p_dvdt, p_phase]:
+        for p in [p_embedding, p_vm, p_dvdt, p_phase_norm, p_phase]:
             if not p.legend:
                 continue
             config = legend_configs.get(p)
@@ -595,7 +658,7 @@ class RawSpikeAnalysis:
         self._sync_renderer_visibility(legend_groups)
 
         layout = gridplot(
-            [[p_embedding, p_vm], [p_phase, p_dvdt], [None, None]],
+            [[p_embedding, p_vm], [p_phase_norm, p_dvdt], [p_phase, None]],
             toolbar_location="right",
             merge_tools=False,
         )
@@ -635,7 +698,7 @@ class RawSpikeAnalysis:
         normalize_window_dvdt,
         plot_settings,
     ):
-        """Build the four figures used in the spike analysis view."""
+        """Build the figures used in the spike analysis view."""
         embedding = figure(
             x_axis_label=f"{dim_reduction_method}1",
             y_axis_label=f"{dim_reduction_method}2",
@@ -658,6 +721,13 @@ class RawSpikeAnalysis:
             tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
             **plot_settings,
         )
+        phase_norm = figure(
+            title="Phase Plot (Normalized)",
+            x_axis_label="V (normalized)",
+            y_axis_label="dV/dt (normalized)",
+            tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
+            **plot_settings,
+        )
         phase = figure(
             title="Phase Plot (Unnormalized)",
             x_axis_label="V (mV)",
@@ -666,7 +736,13 @@ class RawSpikeAnalysis:
             **plot_settings,
         )
 
-        return {"embedding": embedding, "vm": vm, "dvdt": dvdt, "phase": phase}
+        return {
+            "embedding": embedding,
+            "vm": vm,
+            "dvdt": dvdt,
+            "phase_norm": phase_norm,
+            "phase": phase,
+        }
 
     @staticmethod
     def _style_subplots(figures, font_size):

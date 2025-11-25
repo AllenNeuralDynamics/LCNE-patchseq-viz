@@ -558,6 +558,19 @@ class PatchSeqNWBApp(param.Parameterized):
                 filtered_df_meta=filtered_df_meta,
             )
 
+            # Extract representative spikes (normalized) - without peak alignment for normalized phase plot
+            df_v_norm_phase, df_dvdt_norm_phase = extract_representative_spikes(
+                df_spikes=self.raw_spike_analysis.df_spikes,
+                extract_from=extract_from,
+                if_normalize_v=True,
+                normalize_window_v=normalize_window_v,
+                if_normalize_dvdt=True,
+                normalize_window_dvdt=normalize_window_dvdt,
+                if_smooth_dvdt=False,
+                if_align_dvdt_peaks=False,
+                filtered_df_meta=filtered_df_meta,
+            )
+
             # Extract representative spikes (unnormalized) - without peak alignment for phase plots
             df_v_unnorm, df_dvdt_unnorm = extract_representative_spikes(
                 df_spikes=self.raw_spike_analysis.df_spikes,
@@ -575,6 +588,8 @@ class PatchSeqNWBApp(param.Parameterized):
             return self.raw_spike_analysis.create_raw_PCA_plots(
                 df_v_norm=df_v_norm,
                 df_dvdt_norm=df_dvdt_norm,
+                df_v_phase_norm=df_v_norm_phase,
+                df_dvdt_phase_norm=df_dvdt_norm_phase,
                 df_v_unnorm=df_v_unnorm,
                 df_dvdt_unnorm=df_dvdt_unnorm,
                 n_clusters=n_clusters,
