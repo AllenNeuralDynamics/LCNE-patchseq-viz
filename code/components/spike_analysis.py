@@ -281,9 +281,16 @@ class RawSpikeAnalysis:
             tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
             **plot_settings,
         )
+        p4 = figure(
+            title="Phase Plot",
+            x_axis_label="V (normalized)",
+            y_axis_label="dV/dt (normalized)",
+            tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
+            **plot_settings,
+        )
 
         # Update font sizes after figure creation
-        for p in [p1, p2, p3]:
+        for p in [p1, p2, p3, p4]:
             # Set the font sizes for the title and axis labels
             p.title.text_font_size = f"{font_size+2}pt"
             p.xaxis.axis_label_text_font_size = f"{font_size+2}pt"
@@ -457,6 +464,25 @@ class RawSpikeAnalysis:
                 legend_label=group_label,
             )
 
+            # Plot phase plot (dV/dt vs V)
+            df_v_this = df_v_norm.query("ephys_roi_id in @ephys_roi_ids")
+            df_dvdt_this = df_dvdt_norm.query("ephys_roi_id in @ephys_roi_ids")
+            source = ColumnDataSource(
+                {
+                    "xs": df_v_this.values.tolist(),
+                    "ys": df_dvdt_this.values.tolist(),
+                    "ephys_roi_id": ephys_roi_ids,
+                }
+            )
+            p4.multi_line(
+                source=source,
+                xs="xs",
+                ys="ys",
+                color=cluster_colors[i],
+                **line_props,
+                legend_label=group_label,
+            )
+
         # Add region cluster_colors to the all plots
         for region in self.df_meta["injection region"].unique():
             if region == "Non-Retro":
@@ -509,6 +535,18 @@ class RawSpikeAnalysis:
                 **line_props,
             )
 
+            # Plot phase plot (dV/dt vs V) for regions
+            v_vals = df_v_norm.query("ephys_roi_id in @roi_ids").values
+            dvdt_vals = df_dvdt_norm.query("ephys_roi_id in @roi_ids").values
+            p4.multi_line(
+                xs=v_vals.tolist(),
+                ys=dvdt_vals.tolist(),
+                color=REGION_COLOR_MAPPER[region],
+                alpha=0.8,
+                legend_label=legend_label,
+                **line_props,
+            )
+
         # Add tooltips
         # Add renderers like this to solve bug like this:
         #   File "/Users/han.hou/miniconda3/envs/patch-seq/lib/python3.10/
@@ -528,16 +566,27 @@ class RawSpikeAnalysis:
         )
         p2.add_tools(hovertool)
         p3.add_tools(hovertool)
+        
+        hovertool = HoverTool(
+            tooltips=[("ephys_roi_id", "@ephys_roi_id")],
+            attachment="right",
+        )
+        p4.add_tools(hovertool)
 
-        for p in [p1, p2, p3]:
+        # Add boxzoomtool to p4
+        box_zoom_x = BoxZoomTool(dimensions="auto")
+        p4.add_tools(box_zoom_x)
+        p4.toolbar.active_drag = box_zoom_x
+
+        for p in [p1, p2, p3, p4]:
             p.legend.ncols = 2
             p.legend.background_fill_alpha = 0.5
             p.legend.location = "bottom_center"
             p.legend.click_policy = "hide"
             p.legend.orientation = "horizontal"
 
-        # Create grid layout with independent axes
-        layout = gridplot([[p1, p2, p3]], toolbar_location="right", merge_tools=False)
+        # Create grid layout with independent axes - now 2 rows x 2 columns
+        layout = gridplot([[p1, p2], [p4, p3]], toolbar_location="right", merge_tools=False)
 
         return layout
 
