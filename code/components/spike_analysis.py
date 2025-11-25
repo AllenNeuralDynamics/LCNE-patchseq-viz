@@ -300,13 +300,6 @@ class RawSpikeAnalysis:
             **plot_settings,
         )
         p4 = figure(
-            title="Phase Plot (Normalized)",
-            x_axis_label="V (normalized)",
-            y_axis_label="dV/dt (normalized)",
-            tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
-            **plot_settings,
-        )
-        p5 = figure(
             title="Phase Plot (Unnormalized)",
             x_axis_label="V (mV)",
             y_axis_label="dV/dt (mV/ms)",
@@ -315,7 +308,7 @@ class RawSpikeAnalysis:
         )
 
         # Update font sizes after figure creation
-        for p in [p1, p2, p3, p4, p5]:
+        for p in [p1, p2, p3, p4]:
             # Set the font sizes for the title and axis labels
             p.title.text_font_size = f"{font_size+2}pt"
             p.xaxis.axis_label_text_font_size = f"{font_size+2}pt"
@@ -491,26 +484,6 @@ class RawSpikeAnalysis:
             )
             register_renderer(group_label, renderer)
 
-            # Plot phase plot (dV/dt vs V) - normalized
-            df_v_this = df_v_norm.query("ephys_roi_id in @ephys_roi_ids")
-            df_dvdt_this = df_dvdt_norm.query("ephys_roi_id in @ephys_roi_ids")
-            source = ColumnDataSource(
-                {
-                    "xs": df_v_this.values.tolist(),
-                    "ys": df_dvdt_this.values.tolist(),
-                    "ephys_roi_id": ephys_roi_ids,
-                }
-            )
-            renderer = p4.multi_line(
-                source=source,
-                xs="xs",
-                ys="ys",
-                color=cluster_colors[i],
-                **line_props,
-                legend_label=group_label,
-            )
-            register_renderer(group_label, renderer)
-
             # Plot phase plot (dV/dt vs V) - unnormalized
             if df_v_unnorm is not None and df_dvdt_unnorm is not None:
                 df_v_unnorm_this = df_v_unnorm.query("ephys_roi_id in @ephys_roi_ids")
@@ -522,7 +495,7 @@ class RawSpikeAnalysis:
                         "ephys_roi_id": ephys_roi_ids,
                     }
                 )
-                renderer = p5.multi_line(
+                renderer = p4.multi_line(
                     source=source,
                     xs="xs",
                     ys="ys",
@@ -586,24 +559,11 @@ class RawSpikeAnalysis:
             )
             register_renderer(legend_label, renderer)
 
-            # Plot phase plot (dV/dt vs V) for regions - normalized
-            v_vals = df_v_norm.query("ephys_roi_id in @roi_ids").values
-            dvdt_vals = df_dvdt_norm.query("ephys_roi_id in @roi_ids").values
-            renderer = p4.multi_line(
-                xs=v_vals.tolist(),
-                ys=dvdt_vals.tolist(),
-                color=REGION_COLOR_MAPPER[region],
-                alpha=0.8,
-                legend_label=legend_label,
-                **line_props,
-            )
-            register_renderer(legend_label, renderer)
-
             # Plot phase plot (dV/dt vs V) for regions - unnormalized
             if df_v_unnorm is not None and df_dvdt_unnorm is not None:
                 v_vals_unnorm = df_v_unnorm.query("ephys_roi_id in @roi_ids").values
                 dvdt_vals_unnorm = df_dvdt_unnorm.query("ephys_roi_id in @roi_ids").values
-                renderer = p5.multi_line(
+                renderer = p4.multi_line(
                     xs=v_vals_unnorm.tolist(),
                     ys=dvdt_vals_unnorm.tolist(),
                     color=REGION_COLOR_MAPPER[region],
@@ -643,28 +603,29 @@ class RawSpikeAnalysis:
             tooltips=[("ephys_roi_id", "@ephys_roi_id")],
             attachment="right",
         )
-        p5.add_tools(hovertool)
 
-        # Add boxzoomtool to p4 and p5
+        # Add boxzoomtool to p4
         box_zoom_x = BoxZoomTool(dimensions="auto")
         p4.add_tools(box_zoom_x)
         p4.toolbar.active_drag = box_zoom_x
         
-        box_zoom_x = BoxZoomTool(dimensions="auto")
-        p5.add_tools(box_zoom_x)
-        p5.toolbar.active_drag = box_zoom_x
+        legend_configs = {
+            p2: {"location": "top_right", "orientation": "vertical", "ncols": 1},
+            p3: {"location": "top_right", "orientation": "vertical", "ncols": 1},
+            p4: {"location": "top_left", "orientation": "vertical", "ncols": 1},
+        }
 
-        legend_target = p2
-        for p in [p1, p2, p3, p4, p5]:
+        for p in [p1, p2, p3, p4]:
             if not p.legend:
                 continue
-            if p is legend_target:
+            config = legend_configs.get(p)
+            if config:
                 p.legend.click_policy = "hide"
                 for legend in p.legend:
-                    legend.ncols = 1
+                    legend.ncols = config.get("ncols", legend.ncols)
                     legend.background_fill_alpha = 0.5
-                    legend.location = "top_right"
-                    legend.orientation = "vertical"
+                    legend.location = config.get("location", legend.location)
+                    legend.orientation = config.get("orientation", legend.orientation)
             else:
                 for legend in p.legend:
                     legend.visible = False
@@ -672,7 +633,7 @@ class RawSpikeAnalysis:
         # Create grid layout with independent axes - now 3 rows x 2 columns
         self._sync_renderer_visibility(legend_groups)
 
-        layout = gridplot([[p1, p2], [p4, p3], [p5, None]], toolbar_location="right", merge_tools=False)
+        layout = gridplot([[p1, p2], [p4, p3], [None, None]], toolbar_location="right", merge_tools=False)
 
         return layout
 
