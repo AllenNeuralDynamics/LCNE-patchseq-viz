@@ -638,6 +638,7 @@ class RawSpikeAnalysis:
             p_phase_norm: {"location": "top_left", "orientation": "vertical", "ncols": 1},
             p_phase: {"location": "top_left", "orientation": "vertical", "ncols": 1},
         }
+        legend_font_size = max(font_size - 6, 8)
 
         for p in [p_embedding, p_vm, p_dvdt, p_phase_norm, p_phase]:
             if not p.legend:
@@ -650,6 +651,7 @@ class RawSpikeAnalysis:
                     legend.background_fill_alpha = 0.5
                     legend.location = config.get("location", legend.location)
                     legend.orientation = config.get("orientation", legend.orientation)
+                    legend.label_text_font_size = f"{legend_font_size}pt"
             else:
                 for legend in p.legend:
                     legend.visible = False
