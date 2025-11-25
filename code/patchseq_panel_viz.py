@@ -779,6 +779,17 @@ class PatchSeqNWBApp(param.Parameterized):
             dynamic=True,  # Allow dynamic updates to tab content
         )
 
+        # Sync app state to URL using pn.state.location.sync()
+        # This automatically handles bidirectional syncing between URL and widget parameters
+        pn.state.location.sync(tabs, {'active': 'tab'})  # Sync tabs.active to ?tab=N
+        pn.state.location.sync(
+            self.data_holder, 
+            {
+                'ephys_roi_id_selected': 'cell_id',  # Sync to ?cell_id=...
+                'sweep_number_selected': 'sweep'      # Sync to ?sweep=...
+            }
+        )
+
         # Create the template
         template = pn.template.BootstrapTemplate(
             title="LC-NE Patch-seq Data Explorer",
