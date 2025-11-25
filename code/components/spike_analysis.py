@@ -654,16 +654,17 @@ class RawSpikeAnalysis:
         p5.add_tools(box_zoom_x)
         p5.toolbar.active_drag = box_zoom_x
 
-        legend_style_figs = [p1, p2, p3, p4, p5]
-        for idx, p in enumerate(legend_style_figs):
+        legend_target = p2
+        for p in [p1, p2, p3, p4, p5]:
             if not p.legend:
                 continue
-            if idx == 0:
-                p.legend.ncols = 2
-                p.legend.background_fill_alpha = 0.5
-                p.legend.location = "bottom_center"
+            if p is legend_target:
                 p.legend.click_policy = "hide"
-                p.legend.orientation = "horizontal"
+                for legend in p.legend:
+                    legend.ncols = 1
+                    legend.background_fill_alpha = 0.5
+                    legend.location = "top_right"
+                    legend.orientation = "vertical"
             else:
                 for legend in p.legend:
                     legend.visible = False
