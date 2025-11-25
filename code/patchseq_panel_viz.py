@@ -269,6 +269,38 @@ class PatchSeqNWBApp(param.Parameterized):
             # width=800,
         )
 
+    def _sync_url_state(self, tabs, spike_controls):
+        """Centralize all URL sync logic for the app."""
+
+        location = pn.state.location
+        location.sync(tabs, {'active': 'tab'})
+        location.sync(
+            self.data_holder,
+            {
+                'ephys_roi_id_selected': 'cell_id',
+                'sweep_number_selected': 'sweep',
+            },
+        )
+
+        spike_mapping = {
+            'extract_from': 'spike_extract',
+            'dim_reduction_method': 'dim_method',
+            'spike_range': 'spike_range',
+            'normalize_window_v': 'norm_v',
+            'normalize_window_dvdt': 'norm_dvdt',
+            'n_clusters': 'n_clusters',
+            'if_show_cluster_on_retro': 'show_retro',
+            'marker_size': 'marker_size',
+            'alpha_slider': 'alpha',
+            'plot_width': 'plot_width',
+            'plot_height': 'plot_height',
+            'font_size': 'font_size',
+        }
+        for control_name, url_param in spike_mapping.items():
+            location.sync(spike_controls[control_name], {'value': url_param})
+
+        self.scatter_plot.sync_controls_to_url()
+
     def create_cell_selector_panel(self, filtered_df_meta):
         """
         Builds and returns the cell selector panel that displays metadata.
@@ -779,16 +811,7 @@ class PatchSeqNWBApp(param.Parameterized):
             dynamic=True,  # Allow dynamic updates to tab content
         )
 
-        # Sync app state to URL using pn.state.location.sync()
-        # This automatically handles bidirectional syncing between URL and widget parameters
-        pn.state.location.sync(tabs, {'active': 'tab'})  # Sync tabs.active to ?tab=N
-        pn.state.location.sync(
-            self.data_holder, 
-            {
-                'ephys_roi_id_selected': 'cell_id',  # Sync to ?cell_id=...
-                'sweep_number_selected': 'sweep'      # Sync to ?sweep=...
-            }
-        )
+        self._sync_url_state(tabs, spike_controls)
 
         # Create the template
         template = pn.template.BootstrapTemplate(

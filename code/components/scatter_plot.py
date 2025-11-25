@@ -227,6 +227,32 @@ class ScatterPlot:
 
         return controls
 
+    def sync_controls_to_url(self):
+        """Sync scatter plot controls to URL query parameters."""
+
+        location = pn.state.location
+        mapping = {
+            "x_axis_select": "scatter_x",
+            "y_axis_select": "scatter_y",
+            "color_col_select": "scatter_color",
+            "color_palette_select": "scatter_palette",
+            "size_col_select": "scatter_size",
+            "size_range_slider": "scatter_size_range",
+            "size_gamma_slider": "scatter_gamma",
+            "alpha_slider": "scatter_alpha",
+            "width_slider": "scatter_width",
+            "height_slider": "scatter_height",
+            "bins_slider": "scatter_bins",
+            "show_gmm": "scatter_gmm",
+            "show_linear_fit": "scatter_linear_fit",
+            "n_components_x": "scatter_components_x",
+            "n_components_y": "scatter_components_y",
+            "hist_height_slider": "scatter_hist_height",
+            "font_size_slider": "scatter_font_size",
+        }
+        for control_name, url_param in mapping.items():
+            location.sync(self.controls[control_name], {"value": url_param})
+
     def create_tooltips(
         self, x_col: str, y_col: str, color_col: str, size_col: str
     ) -> List[Tuple[str, str]]:
