@@ -274,58 +274,24 @@ class RawSpikeAnalysis:
                 return
             legend_groups.setdefault(label, []).append(renderer)
 
-        # Create figures
-        p1 = figure(
-            x_axis_label=f"{dim_reduction_method}1",
-            y_axis_label=f"{dim_reduction_method}2",
-            tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
-            **plot_settings,
+        plots = self._init_spike_subplots(
+            dim_reduction_method,
+            spike_range,
+            normalize_window_v,
+            normalize_window_dvdt,
+            plot_settings,
         )
-        p2 = figure(
-            title=f"Raw Vm, normalized between {normalize_window_v[0]} "
-            f"to {normalize_window_v[1]} ms",
-            x_axis_label="Time (ms)",
-            y_axis_label="V",
-            x_range=(spike_range[0] - 0.1, spike_range[1] + 0.1),
-            tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
-            **plot_settings,
-        )
-        p3 = figure(
-            title=f"dV/dt, normalized betwen {normalize_window_dvdt[0]} "
-            f"to {normalize_window_dvdt[1]} ms",
-            x_axis_label="Time (ms)",
-            y_axis_label="dV/dt",
-            x_range=(spike_range[0] - 0.1, spike_range[1] + 0.1),
-            tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
-            **plot_settings,
-        )
-        p4 = figure(
-            title="Phase Plot (Unnormalized)",
-            x_axis_label="V (mV)",
-            y_axis_label="dV/dt (mV/ms)",
-            tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
-            **plot_settings,
-        )
+        p_embedding = plots["embedding"]
+        p_vm = plots["vm"]
+        p_dvdt = plots["dvdt"]
+        p_phase = plots["phase"]
 
-        # Update font sizes after figure creation
-        for p in [p1, p2, p3, p4]:
-            # Set the font sizes for the title and axis labels
-            p.title.text_font_size = f"{font_size+2}pt"
-            p.xaxis.axis_label_text_font_size = f"{font_size+2}pt"
-            p.yaxis.axis_label_text_font_size = f"{font_size+2}pt"
-
-            # Set the font sizes for the major tick labels on the axes
-            p.xaxis.major_label_text_font_size = f"{font_size}pt"
-            p.yaxis.major_label_text_font_size = f"{font_size}pt"
-
-            # Set legend font size if legend exists
-            if p.legend:
-                p.legend.label_text_font_size = f"{font_size}pt"
+        self._style_subplots(plots.values(), font_size)
 
         # -- Plot PCA scatter with contours --
         # Create a single ColumnDataSource for all clusters
         # If injection region is not "Non-Retro", set color to None
-        scatter_list_p1 = []
+        scatter_renderers = []
 
         for i in df_v_proj["cluster_id"].unique():
             # Add dots
@@ -338,7 +304,7 @@ class RawSpikeAnalysis:
             group_label += f", n={df_v_proj.query(querystr).shape[0]}"
 
             source = ColumnDataSource(df_v_proj.query(querystr))
-            scatter = p1.scatter(
+            scatter = p_embedding.scatter(
                 x=f"{dim_reduction_method}1",
                 y=f"{dim_reduction_method}2",
                 source=source,
@@ -349,7 +315,7 @@ class RawSpikeAnalysis:
                 hover_color="blue",
                 selection_color="blue",
             )
-            scatter_list_p1.append(scatter)
+            scatter_renderers.append(scatter)
             register_renderer(group_label, scatter)
 
             # Attach the callback to the selection changes
@@ -370,17 +336,17 @@ class RawSpikeAnalysis:
             pos = np.dstack((x, y))
             rv = multivariate_normal(mean, cov)
             z = rv.pdf(pos)
-            add_counter(p1, x, y, z, levels=3, line_color=cluster_colors[i], alpha=1)
+            add_counter(p_embedding, x, y, z, levels=3, line_color=cluster_colors[i], alpha=1)
 
         # Add metrics to the plot
-        p1.title.text = (
+        p_embedding.title.text = (
             f"{dim_reduction_method} + K-means Clustering (n_clusters = {n_clusters})\n"
             f"Silhouette Score: {metrics['silhouette_avg']:.3f}\n"
         )
-        p1.toolbar.active_scroll = p1.select_one(WheelZoomTool)
+        p_embedding.toolbar.active_scroll = p_embedding.select_one(WheelZoomTool)
 
         # Add vertical lines for normalization windows
-        p2.add_layout(
+        p_vm.add_layout(
             Span(
                 location=normalize_window_v[0],
                 dimension="height",
@@ -389,7 +355,7 @@ class RawSpikeAnalysis:
                 line_width=2,
             )
         )
-        p2.add_layout(
+        p_vm.add_layout(
             Span(
                 location=normalize_window_v[1],
                 dimension="height",
@@ -398,7 +364,7 @@ class RawSpikeAnalysis:
                 line_width=2,
             )
         )
-        p3.add_layout(
+        p_dvdt.add_layout(
             Span(
                 location=normalize_window_dvdt[0],
                 dimension="height",
@@ -407,7 +373,7 @@ class RawSpikeAnalysis:
                 line_width=2,
             )
         )
-        p3.add_layout(
+        p_dvdt.add_layout(
             Span(
                 location=normalize_window_dvdt[1],
                 dimension="height",
@@ -417,13 +383,13 @@ class RawSpikeAnalysis:
             )
         )
 
-        # Add boxzoomtool to p2 and p3
+        # Add boxzoomtool to Vm and dV/dt plots
         box_zoom_x = BoxZoomTool(dimensions="auto")
-        p2.add_tools(box_zoom_x)
-        p2.toolbar.active_drag = box_zoom_x
+        p_vm.add_tools(box_zoom_x)
+        p_vm.toolbar.active_drag = box_zoom_x
         box_zoom_x = BoxZoomTool(dimensions="auto")
-        p3.add_tools(box_zoom_x)
-        p3.toolbar.active_drag = box_zoom_x
+        p_dvdt.add_tools(box_zoom_x)
+        p_dvdt.toolbar.active_drag = box_zoom_x
 
         # Plot voltage and dV/dt traces
         for i in range(n_clusters):
@@ -455,7 +421,7 @@ class RawSpikeAnalysis:
                 }
             )
 
-            renderer = p2.multi_line(
+            renderer = p_vm.multi_line(
                 source=source,
                 xs="xs",
                 ys="ys",
@@ -474,7 +440,7 @@ class RawSpikeAnalysis:
                     "ephys_roi_id": ephys_roi_ids,
                 }
             )
-            renderer = p3.multi_line(
+            renderer = p_dvdt.multi_line(
                 source=source,
                 xs="xs",
                 ys="ys",
@@ -495,7 +461,7 @@ class RawSpikeAnalysis:
                         "ephys_roi_id": ephys_roi_ids,
                     }
                 )
-                renderer = p4.multi_line(
+                renderer = p_phase.multi_line(
                     source=source,
                     xs="xs",
                     ys="ys",
@@ -513,7 +479,7 @@ class RawSpikeAnalysis:
             legend_label = f"{region}, n={len(roi_ids)}"
 
             source = ColumnDataSource(df_v_proj.query("ephys_roi_id in @roi_ids"))
-            scatter = p1.scatter(
+            scatter = p_embedding.scatter(
                 x=f"{dim_reduction_method}1",
                 y=f"{dim_reduction_method}2",
                 source=source,
@@ -522,7 +488,7 @@ class RawSpikeAnalysis:
                 size=marker_size,
                 legend_label=legend_label,
             )
-            scatter_list_p1.append(scatter)
+            scatter_renderers.append(scatter)
             register_renderer(legend_label, scatter)
 
             # Attach the callback to the selection changes
@@ -539,7 +505,7 @@ class RawSpikeAnalysis:
                 "selection_line_alpha": 1.0,
                 "selection_line_width": 4,
             }
-            renderer = p2.multi_line(
+            renderer = p_vm.multi_line(
                 xs=[df_v_norm.query("ephys_roi_id in @roi_ids").columns.values] * ys.shape[0],
                 ys=ys.tolist(),
                 color=REGION_COLOR_MAPPER[region],
@@ -549,7 +515,7 @@ class RawSpikeAnalysis:
             )
             register_renderer(legend_label, renderer)
             ys = df_dvdt_norm.query("ephys_roi_id in @roi_ids").values
-            renderer = p3.multi_line(
+            renderer = p_dvdt.multi_line(
                 xs=[df_dvdt_norm.query("ephys_roi_id in @roi_ids").columns.values] * ys.shape[0],
                 ys=ys.tolist(),
                 color=REGION_COLOR_MAPPER[region],
@@ -563,7 +529,7 @@ class RawSpikeAnalysis:
             if df_v_unnorm is not None and df_dvdt_unnorm is not None:
                 v_vals_unnorm = df_v_unnorm.query("ephys_roi_id in @roi_ids").values
                 dvdt_vals_unnorm = df_dvdt_unnorm.query("ephys_roi_id in @roi_ids").values
-                renderer = p4.multi_line(
+                renderer = p_phase.multi_line(
                     xs=v_vals_unnorm.tolist(),
                     ys=dvdt_vals_unnorm.tolist(),
                     color=REGION_COLOR_MAPPER[region],
@@ -582,40 +548,35 @@ class RawSpikeAnalysis:
         # 2025-04-09 00:03:04,658 500 GET /patchseq_panel_viz??? (::1) 8541.01ms
         hovertool = HoverTool(
             tooltips=self.create_tooltips(),
-            renderers=scatter_list_p1,
+            renderers=scatter_renderers,
         )
-        p1.add_tools(hovertool)
+        p_embedding.add_tools(hovertool)
 
         hovertool = HoverTool(
             tooltips=[("ephys_roi_id", "@ephys_roi_id")],
             attachment="right",  # Fix tooltip to the right of the plot
         )
-        p2.add_tools(hovertool)
-        p3.add_tools(hovertool)
+        p_vm.add_tools(hovertool)
+        p_dvdt.add_tools(hovertool)
         
         hovertool = HoverTool(
             tooltips=[("ephys_roi_id", "@ephys_roi_id")],
             attachment="right",
         )
-        p4.add_tools(hovertool)
+        p_phase.add_tools(hovertool)
         
-        hovertool = HoverTool(
-            tooltips=[("ephys_roi_id", "@ephys_roi_id")],
-            attachment="right",
-        )
-
-        # Add boxzoomtool to p4
+        # Add boxzoomtool to phase plot
         box_zoom_x = BoxZoomTool(dimensions="auto")
-        p4.add_tools(box_zoom_x)
-        p4.toolbar.active_drag = box_zoom_x
+        p_phase.add_tools(box_zoom_x)
+        p_phase.toolbar.active_drag = box_zoom_x
         
         legend_configs = {
-            p2: {"location": "top_right", "orientation": "vertical", "ncols": 1},
-            p3: {"location": "top_right", "orientation": "vertical", "ncols": 1},
-            p4: {"location": "top_left", "orientation": "vertical", "ncols": 1},
+            p_vm: {"location": "top_right", "orientation": "vertical", "ncols": 1},
+            p_dvdt: {"location": "top_right", "orientation": "vertical", "ncols": 1},
+            p_phase: {"location": "top_left", "orientation": "vertical", "ncols": 1},
         }
 
-        for p in [p1, p2, p3, p4]:
+        for p in [p_embedding, p_vm, p_dvdt, p_phase]:
             if not p.legend:
                 continue
             config = legend_configs.get(p)
@@ -633,7 +594,11 @@ class RawSpikeAnalysis:
         # Create grid layout with independent axes - now 3 rows x 2 columns
         self._sync_renderer_visibility(legend_groups)
 
-        layout = gridplot([[p1, p2], [p4, p3], [None, None]], toolbar_location="right", merge_tools=False)
+        layout = gridplot(
+            [[p_embedding, p_vm], [p_phase, p_dvdt], [None, None]],
+            toolbar_location="right",
+            merge_tools=False,
+        )
 
         return layout
 
@@ -661,6 +626,59 @@ class RawSpikeAnalysis:
                     "visible",
                     CustomJS(args={"targets": others}, code=sync_code),
                 )
+
+    def _init_spike_subplots(
+        self,
+        dim_reduction_method,
+        spike_range,
+        normalize_window_v,
+        normalize_window_dvdt,
+        plot_settings,
+    ):
+        """Build the four figures used in the spike analysis view."""
+        embedding = figure(
+            x_axis_label=f"{dim_reduction_method}1",
+            y_axis_label=f"{dim_reduction_method}2",
+            tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
+            **plot_settings,
+        )
+        vm = figure(
+            title=f"Raw Vm, normalized between {normalize_window_v[0]} to {normalize_window_v[1]} ms",
+            x_axis_label="Time (ms)",
+            y_axis_label="V",
+            x_range=(spike_range[0] - 0.1, spike_range[1] + 0.1),
+            tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
+            **plot_settings,
+        )
+        dvdt = figure(
+            title=f"dV/dt, normalized betwen {normalize_window_dvdt[0]} to {normalize_window_dvdt[1]} ms",
+            x_axis_label="Time (ms)",
+            y_axis_label="dV/dt",
+            x_range=(spike_range[0] - 0.1, spike_range[1] + 0.1),
+            tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
+            **plot_settings,
+        )
+        phase = figure(
+            title="Phase Plot (Unnormalized)",
+            x_axis_label="V (mV)",
+            y_axis_label="dV/dt (mV/ms)",
+            tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
+            **plot_settings,
+        )
+
+        return {"embedding": embedding, "vm": vm, "dvdt": dvdt, "phase": phase}
+
+    @staticmethod
+    def _style_subplots(figures, font_size):
+        """Apply consistent font styling across subplots."""
+        for fig in figures:
+            fig.title.text_font_size = f"{font_size+2}pt"
+            fig.xaxis.axis_label_text_font_size = f"{font_size+2}pt"
+            fig.yaxis.axis_label_text_font_size = f"{font_size+2}pt"
+            fig.xaxis.major_label_text_font_size = f"{font_size}pt"
+            fig.yaxis.major_label_text_font_size = f"{font_size}pt"
+            if fig.legend:
+                fig.legend.label_text_font_size = f"{font_size}pt"
 
 
 def add_counter(p, x, y, z, levels=5, line_color="blue", alpha=0.5, line_width=2):
