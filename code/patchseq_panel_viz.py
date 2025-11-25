@@ -604,7 +604,7 @@ class PatchSeqNWBApp(param.Parameterized):
         ]
         params = {
             k: (
-                controls[k].param.value_throttled
+                controls[k].param.value
                 if k not in ["if_show_cluster_on_retro", "dim_reduction_method"]
                 else controls[k].param.value
             )
