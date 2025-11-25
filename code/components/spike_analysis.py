@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import panel as pn
 from bokeh.layouts import gridplot
-from bokeh.models import BoxZoomTool, ColumnDataSource, HoverTool, Span, WheelZoomTool
+from bokeh.models import BoxZoomTool, ColumnDataSource, CustomJS, HoverTool, Span, WheelZoomTool
 from bokeh.plotting import figure
 from scipy.stats import multivariate_normal
 from sklearn.cluster import KMeans
@@ -267,6 +267,12 @@ class RawSpikeAnalysis:
 
         # Common plot settings
         plot_settings = dict(width=width, height=height)
+        legend_groups = {}
+
+        def register_renderer(label, renderer):
+            if not label or renderer is None:
+                return
+            legend_groups.setdefault(label, []).append(renderer)
 
         # Create figures
         p1 = figure(
@@ -339,19 +345,19 @@ class RawSpikeAnalysis:
             group_label += f", n={df_v_proj.query(querystr).shape[0]}"
 
             source = ColumnDataSource(df_v_proj.query(querystr))
-            scatter_list_p1.append(
-                p1.scatter(
-                    x=f"{dim_reduction_method}1",
-                    y=f"{dim_reduction_method}2",
-                    source=source,
-                    size=marker_size,
-                    color=cluster_colors[i],
-                    alpha=alpha,
-                    legend_label=group_label,
-                    hover_color="blue",
-                    selection_color="blue",
-                )
+            scatter = p1.scatter(
+                x=f"{dim_reduction_method}1",
+                y=f"{dim_reduction_method}2",
+                source=source,
+                size=marker_size,
+                color=cluster_colors[i],
+                alpha=alpha,
+                legend_label=group_label,
+                hover_color="blue",
+                selection_color="blue",
             )
+            scatter_list_p1.append(scatter)
+            register_renderer(group_label, scatter)
 
             # Attach the callback to the selection changes
             source.selected.on_change("indices", partial(self.update_ephys_roi_id, source.data))
@@ -456,7 +462,7 @@ class RawSpikeAnalysis:
                 }
             )
 
-            p2.multi_line(
+            renderer = p2.multi_line(
                 source=source,
                 xs="xs",
                 ys="ys",
@@ -464,6 +470,7 @@ class RawSpikeAnalysis:
                 **line_props,
                 legend_label=group_label,
             )
+            register_renderer(group_label, renderer)
 
             # Plot dV/dt traces
             df_this = df_dvdt_norm.query("ephys_roi_id in @ephys_roi_ids")
@@ -474,7 +481,7 @@ class RawSpikeAnalysis:
                     "ephys_roi_id": ephys_roi_ids,
                 }
             )
-            p3.multi_line(
+            renderer = p3.multi_line(
                 source=source,
                 xs="xs",
                 ys="ys",
@@ -482,6 +489,7 @@ class RawSpikeAnalysis:
                 **line_props,
                 legend_label=group_label,
             )
+            register_renderer(group_label, renderer)
 
             # Plot phase plot (dV/dt vs V) - normalized
             df_v_this = df_v_norm.query("ephys_roi_id in @ephys_roi_ids")
@@ -493,7 +501,7 @@ class RawSpikeAnalysis:
                     "ephys_roi_id": ephys_roi_ids,
                 }
             )
-            p4.multi_line(
+            renderer = p4.multi_line(
                 source=source,
                 xs="xs",
                 ys="ys",
@@ -501,6 +509,7 @@ class RawSpikeAnalysis:
                 **line_props,
                 legend_label=group_label,
             )
+            register_renderer(group_label, renderer)
 
             # Plot phase plot (dV/dt vs V) - unnormalized
             if df_v_unnorm is not None and df_dvdt_unnorm is not None:
@@ -513,7 +522,7 @@ class RawSpikeAnalysis:
                         "ephys_roi_id": ephys_roi_ids,
                     }
                 )
-                p5.multi_line(
+                renderer = p5.multi_line(
                     source=source,
                     xs="xs",
                     ys="ys",
@@ -521,6 +530,7 @@ class RawSpikeAnalysis:
                     **line_props,
                     legend_label=group_label,
                 )
+                register_renderer(group_label, renderer)
 
         # Add region cluster_colors to the all plots
         for region in self.df_meta["injection region"].unique():
@@ -530,17 +540,17 @@ class RawSpikeAnalysis:
             legend_label = f"{region}, n={len(roi_ids)}"
 
             source = ColumnDataSource(df_v_proj.query("ephys_roi_id in @roi_ids"))
-            scatter_list_p1.append(
-                p1.scatter(
-                    x=f"{dim_reduction_method}1",
-                    y=f"{dim_reduction_method}2",
-                    source=source,
-                    color=REGION_COLOR_MAPPER[region],
-                    alpha=0.8,
-                    size=marker_size,
-                    legend_label=legend_label,
-                )
+            scatter = p1.scatter(
+                x=f"{dim_reduction_method}1",
+                y=f"{dim_reduction_method}2",
+                source=source,
+                color=REGION_COLOR_MAPPER[region],
+                alpha=0.8,
+                size=marker_size,
+                legend_label=legend_label,
             )
+            scatter_list_p1.append(scatter)
+            register_renderer(legend_label, scatter)
 
             # Attach the callback to the selection changes
             source.selected.on_change("indices", partial(self.update_ephys_roi_id, source.data))
@@ -556,7 +566,7 @@ class RawSpikeAnalysis:
                 "selection_line_alpha": 1.0,
                 "selection_line_width": 4,
             }
-            p2.multi_line(
+            renderer = p2.multi_line(
                 xs=[df_v_norm.query("ephys_roi_id in @roi_ids").columns.values] * ys.shape[0],
                 ys=ys.tolist(),
                 color=REGION_COLOR_MAPPER[region],
@@ -564,8 +574,9 @@ class RawSpikeAnalysis:
                 legend_label=legend_label,
                 **line_props,
             )
+            register_renderer(legend_label, renderer)
             ys = df_dvdt_norm.query("ephys_roi_id in @roi_ids").values
-            p3.multi_line(
+            renderer = p3.multi_line(
                 xs=[df_dvdt_norm.query("ephys_roi_id in @roi_ids").columns.values] * ys.shape[0],
                 ys=ys.tolist(),
                 color=REGION_COLOR_MAPPER[region],
@@ -573,11 +584,12 @@ class RawSpikeAnalysis:
                 legend_label=legend_label,
                 **line_props,
             )
+            register_renderer(legend_label, renderer)
 
             # Plot phase plot (dV/dt vs V) for regions - normalized
             v_vals = df_v_norm.query("ephys_roi_id in @roi_ids").values
             dvdt_vals = df_dvdt_norm.query("ephys_roi_id in @roi_ids").values
-            p4.multi_line(
+            renderer = p4.multi_line(
                 xs=v_vals.tolist(),
                 ys=dvdt_vals.tolist(),
                 color=REGION_COLOR_MAPPER[region],
@@ -585,12 +597,13 @@ class RawSpikeAnalysis:
                 legend_label=legend_label,
                 **line_props,
             )
+            register_renderer(legend_label, renderer)
 
             # Plot phase plot (dV/dt vs V) for regions - unnormalized
             if df_v_unnorm is not None and df_dvdt_unnorm is not None:
                 v_vals_unnorm = df_v_unnorm.query("ephys_roi_id in @roi_ids").values
                 dvdt_vals_unnorm = df_dvdt_unnorm.query("ephys_roi_id in @roi_ids").values
-                p5.multi_line(
+                renderer = p5.multi_line(
                     xs=v_vals_unnorm.tolist(),
                     ys=dvdt_vals_unnorm.tolist(),
                     color=REGION_COLOR_MAPPER[region],
@@ -598,6 +611,7 @@ class RawSpikeAnalysis:
                     legend_label=legend_label,
                     **line_props,
                 )
+                register_renderer(legend_label, renderer)
 
         # Add tooltips
         # Add renderers like this to solve bug like this:
@@ -640,17 +654,51 @@ class RawSpikeAnalysis:
         p5.add_tools(box_zoom_x)
         p5.toolbar.active_drag = box_zoom_x
 
-        for p in [p1, p2, p3, p4, p5]:
-            p.legend.ncols = 2
-            p.legend.background_fill_alpha = 0.5
-            p.legend.location = "bottom_center"
-            p.legend.click_policy = "hide"
-            p.legend.orientation = "horizontal"
+        legend_style_figs = [p1, p2, p3, p4, p5]
+        for idx, p in enumerate(legend_style_figs):
+            if not p.legend:
+                continue
+            if idx == 0:
+                p.legend.ncols = 2
+                p.legend.background_fill_alpha = 0.5
+                p.legend.location = "bottom_center"
+                p.legend.click_policy = "hide"
+                p.legend.orientation = "horizontal"
+            else:
+                for legend in p.legend:
+                    legend.visible = False
 
         # Create grid layout with independent axes - now 3 rows x 2 columns
+        self._sync_renderer_visibility(legend_groups)
+
         layout = gridplot([[p1, p2], [p4, p3], [p5, None]], toolbar_location="right", merge_tools=False)
 
         return layout
+
+
+    @staticmethod
+    def _sync_renderer_visibility(legend_groups):
+        """Ensure renderers with matching legends stay in sync across plots."""
+        sync_code = """
+        for (const target of targets) {
+            if (target.visible === cb_obj.visible) {
+                continue;
+            }
+            target.visible = cb_obj.visible;
+        }
+        """
+
+        for renderers in legend_groups.values():
+            if len(renderers) <= 1:
+                continue
+            for idx, renderer in enumerate(renderers):
+                others = [r for j, r in enumerate(renderers) if j != idx]
+                if not others:
+                    continue
+                renderer.js_on_change(
+                    "visible",
+                    CustomJS(args={"targets": others}, code=sync_code),
+                )
 
 
 def add_counter(p, x, y, z, levels=5, line_color="blue", alpha=0.5, line_width=2):
