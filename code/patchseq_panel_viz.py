@@ -269,7 +269,7 @@ class PatchSeqNWBApp(param.Parameterized):
             # width=800,
         )
 
-    def _sync_url_state(self, tabs, spike_controls):
+    def _sync_url_state(self, tabs, spike_controls, filter_query=None):
         """Centralize all URL sync logic for the app."""
 
         location = pn.state.location
@@ -300,6 +300,9 @@ class PatchSeqNWBApp(param.Parameterized):
             location.sync(spike_controls[control_name], {'value': url_param})
 
         self.scatter_plot.sync_controls_to_url()
+
+        if filter_query is not None:
+            location.sync(filter_query, {'value': 'query'})
 
     def create_cell_selector_panel(self, filtered_df_meta):
         """
@@ -753,6 +756,13 @@ class PatchSeqNWBApp(param.Parameterized):
             css_classes=["card", "p-4", "m-4"],
         )
 
+        if not hasattr(self, "_filter_autoload_registered"):
+            def _apply_filter_on_load():
+                apply_filter_callback(None)
+
+            pn.state.onload(_apply_filter_on_load)
+            self._filter_autoload_registered = True
+
         # Create the filtered count display
         filtered_count = pn.bind(
             lambda filtered_df: pn.pane.Markdown(
@@ -811,7 +821,7 @@ class PatchSeqNWBApp(param.Parameterized):
             dynamic=True,  # Allow dynamic updates to tab content
         )
 
-        self._sync_url_state(tabs, spike_controls)
+        self._sync_url_state(tabs, spike_controls, filter_query)
 
         # Create the template
         template = pn.template.BootstrapTemplate(
