@@ -59,6 +59,7 @@ class ScatterPlot:
         # Add cell summary URLs to dataframe
         self._add_cell_summary_urls()
         self.controls = self.create_plot_controls(width=300)
+        self._latest_figures = {}
 
     def _add_cell_summary_urls(self):
         """Add cell summary URLs to the dataframe."""
@@ -685,6 +686,19 @@ class ScatterPlot:
                 # marginalized_histograms,
             ),
         )
+        
+        # Store figures for export
+        self._latest_figures = {
+            "scatter_plot": p,
+        }
+        if x_hist is not None:
+            self._latest_figures["x_histogram"] = x_hist
+        if y_hist is not None:
+            self._latest_figures["y_histogram"] = y_hist
+        # Store violin plot if it's a matplotlib figure (not just a markdown pane)
+        if hasattr(violin_plot, 'object') and hasattr(violin_plot.object, 'savefig'):
+            self._latest_figures["violin_plot"] = violin_plot
+            
         return layout
 
     def create_marginalized_histograms(

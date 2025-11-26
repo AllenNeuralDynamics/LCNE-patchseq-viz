@@ -131,13 +131,6 @@ class RawSpikeAnalysis:
                 sizing_mode="stretch_width",
             ),
         }
-        controls["download_svgs"] = pn.widgets.FileDownload(
-            label="Download spike plots (SVG)",
-            filename="spike_plots.zip",
-            button_type="success",
-            sizing_mode="stretch_width",
-        )
-        controls["download_svgs"].callback = self._download_svg_bundle
         return controls
 
     def perform_dim_reduction_clustering(
@@ -821,15 +814,6 @@ class RawSpikeAnalysis:
         }
 
         return layout
-
-    def _download_svg_bundle(self):
-        if not self._latest_figures:
-            raise RuntimeError("Generate the spike analysis plots before downloading SVGs.")
-        zip_buffer, timestamp = export_figures_to_svg_zip(self._latest_figures)
-        # Update the filename with timestamp before returning
-        self.main_app.controls["spike"]["download_svgs"].filename = f"spike_plots_{timestamp}.zip"
-        return zip_buffer
-
 
     @staticmethod
     def _sync_renderer_visibility(legend_groups):

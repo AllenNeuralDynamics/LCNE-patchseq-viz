@@ -60,6 +60,10 @@ class PatchSeqNWBApp(param.Parameterized):
         """
         # Holder for currently selected cell ID.
         self.data_holder = PatchSeqNWBApp.DataHolder()
+        
+        # Store figures for context-aware export
+        self._cell_explorer_figures = {}
+        self._active_tab = 0
 
         # Load and prepare metadata.
         self.df_meta = load_ephys_metadata(if_from_s3=True, if_with_seq=True, if_with_morphology=True)
@@ -98,8 +102,7 @@ class PatchSeqNWBApp(param.Parameterized):
         # Create a copy for filtering - this will be updated by the global filter
         self.data_holder.filtered_df_meta = self.df_meta.copy()
 
-    @staticmethod
-    def update_bokeh(raw, sweep, downsample_factor=3):
+    def update_bokeh(self, raw, sweep, downsample_factor=3):
         """
         Update the Bokeh plot for a given sweep.
         """
@@ -132,6 +135,12 @@ class PatchSeqNWBApp(param.Parameterized):
             sizing_mode="stretch_width",
         )
         stim_plot.line(time, stimulus, line_width=1.5, color="firebrick")
+        
+        # Store figures for export
+        self._cell_explorer_figures = {
+            "voltage_trace": voltage_plot,
+            "stimulus_trace": stim_plot,
+        }
 
         # Stack the plots vertically using bokeh's column layout
         layout = bokeh_column(
@@ -168,6 +177,38 @@ class PatchSeqNWBApp(param.Parameterized):
             )
         return "<span style='background:lightgreen;'>Sweep passed QC!</span>"
 
+    def _download_svg_context_aware(self):
+        """Download SVGs based on the active tab."""
+        from components.utils.svg_export import export_figures_to_svg_zip
+        
+        if self._active_tab == 0:  # Cell Explorer tab
+            figures = {}
+            
+            # Add scatter plot figures
+            if hasattr(self.scatter_plot, '_latest_figures') and self.scatter_plot._latest_figures:
+                figures.update(self.scatter_plot._latest_figures)
+            
+            # Add cell explorer figures (voltage/stimulus traces)
+            if self._cell_explorer_figures:
+                figures.update(self._cell_explorer_figures)
+            
+            if not figures:
+                raise RuntimeError("No figures available. Select a cell and generate scatter plot first.")
+            
+            prefix = "app_download_cell_explorer"
+        elif self._active_tab == 1:  # Spike Analysis tab
+            if not self.raw_spike_analysis._latest_figures:
+                raise RuntimeError("Generate the spike analysis plots before downloading SVGs.")
+            figures = self.raw_spike_analysis._latest_figures
+            prefix = "app_download_spike_analysis"
+        else:  # Other tabs
+            raise RuntimeError(f"SVG export not supported for tab {self._active_tab}.")
+        
+        zip_buffer, timestamp = export_figures_to_svg_zip(figures)
+        # Update the filename with timestamp before returning
+        self._download_button.filename = f"{prefix}_{timestamp}.zip"
+        return zip_buffer
+    
     def apply_global_filter(self, query_string):
         """
         Apply a query filter to the metadata DataFrame.
@@ -837,6 +878,23 @@ class PatchSeqNWBApp(param.Parameterized):
         )
 
         self._sync_url_state(tabs, spike_controls, filter_query)
+        
+        # Initialize _active_tab from current tab state (important for URL loading)
+        self._active_tab = tabs.active
+        
+        # Create download button in sidebar
+        self._download_button = pn.widgets.FileDownload(
+            label="Download current plots (SVG)",
+            filename="plots.zip",
+            button_type="success",
+            sizing_mode="stretch_width",
+        )
+        self._download_button.callback = self._download_svg_context_aware
+        
+        # Track active tab to change download behavior
+        def update_active_tab(event):
+            self._active_tab = event.new
+        tabs.param.watch(update_active_tab, 'active')
 
         # Create the template
         template = pn.template.BootstrapTemplate(
@@ -876,6 +934,9 @@ class PatchSeqNWBApp(param.Parameterized):
                     ),
                     id=self.data_holder.param.sweep_number_selected,
                 ),
+                pn.layout.Divider(margin=(10, 0)),
+                pn.pane.Markdown("### Export"),
+                self._download_button,
             ],
             theme="default",
         )
