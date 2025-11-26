@@ -22,6 +22,8 @@ except:
 from LCNE_patchseq_analysis import REGION_COLOR_MAPPER
 from LCNE_patchseq_analysis.pipeline_util.s3 import get_public_representative_spikes
 
+from components.utils.svg_export import export_figures_to_svg_zip
+
 
 class RawSpikeAnalysis:
     """Handles spike waveform analysis and visualization."""
@@ -30,6 +32,7 @@ class RawSpikeAnalysis:
         """Initialize with metadata dataframe."""
         self.main_app = main_app
         self.df_meta = df_meta
+        self._latest_figures = {}
 
         # Load extracted raw spike data
         self.df_spikes = get_public_representative_spikes()
@@ -128,6 +131,13 @@ class RawSpikeAnalysis:
                 sizing_mode="stretch_width",
             ),
         }
+        controls["download_svgs"] = pn.widgets.FileDownload(
+            label="Download spike plots (SVG)",
+            filename="spike_plots.zip",
+            button_type="success",
+            sizing_mode="stretch_width",
+        )
+        controls["download_svgs"].callback = self._download_svg_bundle
         return controls
 
     def perform_dim_reduction_clustering(
@@ -802,7 +812,23 @@ class RawSpikeAnalysis:
             merge_tools=False,
         )
 
+        self._latest_figures = {
+            "embedding": p_embedding,
+            "vm": p_vm,
+            "dvdt": p_dvdt,
+            "phase_norm": p_phase_norm,
+            "phase": p_phase,
+        }
+
         return layout
+
+    def _download_svg_bundle(self):
+        if not self._latest_figures:
+            raise RuntimeError("Generate the spike analysis plots before downloading SVGs.")
+        zip_buffer, timestamp = export_figures_to_svg_zip(self._latest_figures)
+        # Update the filename with timestamp before returning
+        self.main_app.controls["spike"]["download_svgs"].filename = f"spike_plots_{timestamp}.zip"
+        return zip_buffer
 
 
     @staticmethod
