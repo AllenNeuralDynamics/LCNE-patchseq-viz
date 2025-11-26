@@ -287,6 +287,130 @@ class RawSpikeAnalysis:
                 return
             legend_groups.setdefault(label, []).append(renderer)
 
+        def add_timeseries_mean_sem(fig, df_values, color, label):
+            if df_values is None or df_values.empty:
+                return
+            mean = df_values.mean(axis=0)
+            if mean.isna().all():
+                return
+            sem = df_values.sem(axis=0).fillna(0)
+            x_vals = pd.to_numeric(mean.index, errors="coerce")
+            valid_mask = ~(np.isnan(x_vals) | np.isnan(mean.values))
+            if not valid_mask.any():
+                return
+            x_vals = x_vals[valid_mask]
+            mean_vals = mean.values[valid_mask]
+            sem_vals = sem.values[valid_mask]
+            legend_label = f"{label} (mean±SEM)"
+            source = ColumnDataSource(
+                {
+                    "x": x_vals,
+                    "mean": mean_vals,
+                    "upper": mean_vals + sem_vals,
+                    "lower": mean_vals - sem_vals,
+                }
+            )
+            band = fig.varea(
+                x="x",
+                y1="lower",
+                y2="upper",
+                source=source,
+                fill_color=color,
+                fill_alpha=0.15,
+                level="underlay",
+            )
+            register_renderer(legend_label, band)
+            line = fig.line(
+                x="x",
+                y="mean",
+                source=source,
+                color=color,
+                line_width=3,
+                legend_label=legend_label,
+            )
+            register_renderer(legend_label, line)
+
+        def add_phase_mean_sem(fig, df_v_values, df_dvdt_values, color, label, n_bins=100):
+            if (
+                df_v_values is None
+                or df_dvdt_values is None
+                or df_v_values.empty
+                or df_dvdt_values.empty
+            ):
+                return
+            v_vals = df_v_values.to_numpy().astype(float, copy=False).ravel()
+            dvdt_vals = df_dvdt_values.to_numpy().astype(float, copy=False).ravel()
+            finite_mask = np.isfinite(v_vals) & np.isfinite(dvdt_vals)
+            if not finite_mask.any():
+                return
+            v_vals = v_vals[finite_mask]
+            dvdt_vals = dvdt_vals[finite_mask]
+            v_min, v_max = np.min(v_vals), np.max(v_vals)
+            if v_min == v_max:
+                return
+            bin_edges = np.linspace(v_min, v_max, n_bins + 1)
+            bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
+
+            def render_segment(mask, segment_label, line_dash):
+                x_seg = v_vals[mask]
+                y_seg = dvdt_vals[mask]
+                if x_seg.size < 5:
+                    return
+                bin_indices = np.digitize(x_seg, bin_edges) - 1
+                valid = (bin_indices >= 0) & (bin_indices < n_bins)
+                if not valid.any():
+                    return
+                bin_indices = bin_indices[valid]
+                y_seg = y_seg[valid]
+                means = []
+                sems = []
+                centers = []
+                for b_idx in range(n_bins):
+                    bin_mask = bin_indices == b_idx
+                    count = np.count_nonzero(bin_mask)
+                    if count < 3:
+                        continue
+                    values = y_seg[bin_mask]
+                    centers.append(bin_centers[b_idx])
+                    means.append(np.mean(values))
+                    sems.append(np.std(values, ddof=1) / np.sqrt(count) if count > 1 else 0.0)
+                if len(centers) < 2:
+                    return
+                centers = np.array(centers)
+                means = np.array(means)
+                sems = np.array(sems)
+                legend_label = f"{label} ({segment_label} mean±SEM)"
+                band_source = ColumnDataSource(
+                    {
+                        "x": np.concatenate([centers, centers[::-1]]),
+                        "y": np.concatenate([means + sems, (means - sems)[::-1]]),
+                    }
+                )
+                band = fig.patch(
+                    x="x",
+                    y="y",
+                    source=band_source,
+                    fill_color=color,
+                    fill_alpha=0.1,
+                    line_alpha=0,
+                    level="underlay",
+                )
+                register_renderer(legend_label, band)
+                line_source = ColumnDataSource({"x": centers, "y": means})
+                line = fig.line(
+                    x="x",
+                    y="y",
+                    source=line_source,
+                    color=color,
+                    line_width=3,
+                    line_dash=line_dash,
+                    legend_label=legend_label,
+                )
+                register_renderer(legend_label, line)
+
+            render_segment(dvdt_vals >= 0, "dV/dt > 0", "solid")
+            render_segment(dvdt_vals < 0, "dV/dt < 0", "dashed")
+
         plots = self._init_spike_subplots(
             dim_reduction_method,
             spike_range,
@@ -533,7 +657,8 @@ class RawSpikeAnalysis:
             # Attach the callback to the selection changes
             source.selected.on_change("indices", partial(self.update_ephys_roi_id, source.data))
 
-            ys = df_v_norm.query("ephys_roi_id in @roi_ids").values
+            df_v_region = df_v_norm.query("ephys_roi_id in @roi_ids")
+            ys = df_v_region.values
 
             # Common line properties
             line_props = {
@@ -545,7 +670,7 @@ class RawSpikeAnalysis:
                 "selection_line_width": 4,
             }
             renderer = p_vm.multi_line(
-                xs=[df_v_norm.query("ephys_roi_id in @roi_ids").columns.values] * ys.shape[0],
+                xs=[df_v_region.columns.values] * ys.shape[0],
                 ys=ys.tolist(),
                 color=REGION_COLOR_MAPPER[region],
                 alpha=0.8,
@@ -553,9 +678,12 @@ class RawSpikeAnalysis:
                 **line_props,
             )
             register_renderer(legend_label, renderer)
-            ys = df_dvdt_norm.query("ephys_roi_id in @roi_ids").values
+            add_timeseries_mean_sem(p_vm, df_v_region, REGION_COLOR_MAPPER[region], legend_label)
+
+            df_dvdt_region = df_dvdt_norm.query("ephys_roi_id in @roi_ids")
+            ys = df_dvdt_region.values
             renderer = p_dvdt.multi_line(
-                xs=[df_dvdt_norm.query("ephys_roi_id in @roi_ids").columns.values] * ys.shape[0],
+                xs=[df_dvdt_region.columns.values] * ys.shape[0],
                 ys=ys.tolist(),
                 color=REGION_COLOR_MAPPER[region],
                 alpha=0.8,
@@ -563,10 +691,13 @@ class RawSpikeAnalysis:
                 **line_props,
             )
             register_renderer(legend_label, renderer)
+            add_timeseries_mean_sem(p_dvdt, df_dvdt_region, REGION_COLOR_MAPPER[region], legend_label)
 
             # Plot phase plot (dV/dt vs V) for regions - normalized
-            v_vals_norm = phase_norm_v.query("ephys_roi_id in @roi_ids").values
-            dvdt_vals_norm = phase_norm_dvdt.query("ephys_roi_id in @roi_ids").values
+            df_v_norm_region = phase_norm_v.query("ephys_roi_id in @roi_ids")
+            df_dvdt_norm_region = phase_norm_dvdt.query("ephys_roi_id in @roi_ids")
+            v_vals_norm = df_v_norm_region.values
+            dvdt_vals_norm = df_dvdt_norm_region.values
             renderer = p_phase_norm.multi_line(
                 xs=v_vals_norm.tolist(),
                 ys=dvdt_vals_norm.tolist(),
@@ -576,6 +707,13 @@ class RawSpikeAnalysis:
                 **line_props,
             )
             register_renderer(legend_label, renderer)
+            add_phase_mean_sem(
+                p_phase_norm,
+                df_v_norm_region,
+                df_dvdt_norm_region,
+                REGION_COLOR_MAPPER[region],
+                legend_label,
+            )
 
             # Plot phase plot (dV/dt vs V) for regions - unnormalized
             if df_v_unnorm is not None and df_dvdt_unnorm is not None:
@@ -635,7 +773,6 @@ class RawSpikeAnalysis:
         legend_configs = {
             p_vm: {"location": "top_right", "orientation": "vertical", "ncols": 1},
             p_dvdt: {"location": "top_right", "orientation": "vertical", "ncols": 1},
-            p_phase_norm: {"location": "top_left", "orientation": "vertical", "ncols": 1},
             p_phase: {"location": "top_left", "orientation": "vertical", "ncols": 1},
         }
         legend_font_size = max(font_size - 6, 8)
