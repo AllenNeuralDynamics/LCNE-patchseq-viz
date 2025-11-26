@@ -59,6 +59,7 @@ class ScatterPlot:
         # Add cell summary URLs to dataframe
         self._add_cell_summary_urls()
         self.controls = self.create_plot_controls(width=300)
+        self._latest_figures = {}
 
     def _add_cell_summary_urls(self):
         """Add cell summary URLs to the dataframe."""
@@ -226,6 +227,32 @@ class ScatterPlot:
         controls["n_components_y"].disabled = not controls["show_gmm"].value
 
         return controls
+
+    def sync_controls_to_url(self):
+        """Sync scatter plot controls to URL query parameters."""
+
+        location = pn.state.location
+        mapping = {
+            "x_axis_select": ("value", "scatter_x"),
+            "y_axis_select": ("value", "scatter_y"),
+            "color_col_select": ("value", "scatter_color"),
+            "color_palette_select": ("value", "scatter_palette"),
+            "size_col_select": ("value", "scatter_size"),
+            "size_range_slider": ("value", "scatter_size_range"),
+            "size_gamma_slider": ("value", "scatter_gamma"),
+            "alpha_slider": ("value", "scatter_alpha"),
+            "width_slider": ("value", "scatter_width"),
+            "height_slider": ("value", "scatter_height"),
+            "bins_slider": ("value", "scatter_bins"),
+            "show_gmm": ("value", "scatter_gmm"),
+            "show_linear_fit": ("value", "scatter_linear_fit"),
+            "n_components_x": ("value", "scatter_components_x"),
+            "n_components_y": ("value", "scatter_components_y"),
+            "hist_height_slider": ("value", "scatter_hist_height"),
+            "font_size_slider": ("value", "scatter_font_size"),
+        }
+        for control_name, (param_name, url_param) in mapping.items():
+            location.sync(self.controls[control_name], {param_name: url_param})
 
     def create_tooltips(
         self, x_col: str, y_col: str, color_col: str, size_col: str
@@ -659,6 +686,19 @@ class ScatterPlot:
                 # marginalized_histograms,
             ),
         )
+        
+        # Store figures for export
+        self._latest_figures = {
+            "scatter_plot": p,
+        }
+        if x_hist is not None:
+            self._latest_figures["x_histogram"] = x_hist
+        if y_hist is not None:
+            self._latest_figures["y_histogram"] = y_hist
+        # Store violin plot if it's a matplotlib figure (not just a markdown pane)
+        if hasattr(violin_plot, 'object') and hasattr(violin_plot.object, 'savefig'):
+            self._latest_figures["violin_plot"] = violin_plot
+            
         return layout
 
     def create_marginalized_histograms(

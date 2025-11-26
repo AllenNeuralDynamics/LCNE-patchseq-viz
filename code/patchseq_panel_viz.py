@@ -60,6 +60,19 @@ class PatchSeqNWBApp(param.Parameterized):
         """
         # Holder for currently selected cell ID.
         self.data_holder = PatchSeqNWBApp.DataHolder()
+        
+        # Store figures and state for context-aware export
+        self._cell_explorer_figures = {}
+        self._active_tab = 0
+        self._export_progress = pn.widgets.Progress(
+            name="Export progress",
+            value=0,
+            max=100,
+            sizing_mode="stretch_width",
+            bar_color="success",
+            active=True,
+            visible=False,
+        )
 
         # Load and prepare metadata.
         self.df_meta = load_ephys_metadata(if_from_s3=True, if_with_seq=True, if_with_morphology=True)
@@ -98,8 +111,7 @@ class PatchSeqNWBApp(param.Parameterized):
         # Create a copy for filtering - this will be updated by the global filter
         self.data_holder.filtered_df_meta = self.df_meta.copy()
 
-    @staticmethod
-    def update_bokeh(raw, sweep, downsample_factor=3):
+    def update_bokeh(self, raw, sweep, downsample_factor=3):
         """
         Update the Bokeh plot for a given sweep.
         """
@@ -132,6 +144,12 @@ class PatchSeqNWBApp(param.Parameterized):
             sizing_mode="stretch_width",
         )
         stim_plot.line(time, stimulus, line_width=1.5, color="firebrick")
+        
+        # Store figures for export
+        self._cell_explorer_figures = {
+            "voltage_trace": voltage_plot,
+            "stimulus_trace": stim_plot,
+        }
 
         # Stack the plots vertically using bokeh's column layout
         layout = bokeh_column(
@@ -168,6 +186,70 @@ class PatchSeqNWBApp(param.Parameterized):
             )
         return "<span style='background:lightgreen;'>Sweep passed QC!</span>"
 
+    def _download_svg_context_aware(self):
+        """Download SVGs based on the active tab."""
+        from components.utils.svg_export import export_figures_to_svg_zip
+
+        progress = self._export_progress
+        progress.value = 0
+        progress.visible = True
+        progress.name = "Preparing export..."
+
+        try:
+            if self._active_tab == 0:  # Cell Explorer tab
+                figures = {}
+                progress.name = "Collecting scatter figures..."
+
+                if hasattr(self.scatter_plot, "_latest_figures") and self.scatter_plot._latest_figures:
+                    figures.update(self.scatter_plot._latest_figures)
+
+                progress.name = "Collecting cell explorer figures..."
+
+                if self._cell_explorer_figures:
+                    figures.update(self._cell_explorer_figures)
+
+                if not figures:
+                    raise RuntimeError(
+                        "No figures available. Select a cell and generate scatter plot first."
+                    )
+
+                prefix = "app_download_cell_explorer"
+            elif self._active_tab == 1:  # Spike Analysis tab
+                progress.name = "Collecting spike analysis figures..."
+
+                if not self.raw_spike_analysis._latest_figures:
+                    raise RuntimeError("Generate the spike analysis plots before downloading SVGs.")
+                figures = self.raw_spike_analysis._latest_figures
+                prefix = "app_download_spike_analysis"
+            else:  # Other tabs
+                raise RuntimeError(f"SVG export not supported for tab {self._active_tab}.")
+
+            exportable_count = sum(1 for fig in figures.values() if fig is not None)
+            if exportable_count == 0:
+                raise RuntimeError("No exportable figures available for the current tab.")
+
+            progress.value = 0
+            progress.name = f"Rendering SVGs (0/{exportable_count})"
+
+            def report_progress(current, total):
+                progress.value = min(100, int((current / total) * 100))
+                progress.name = f"Rendering SVGs ({current}/{total})"
+
+            zip_buffer, timestamp = export_figures_to_svg_zip(
+                figures, progress_callback=report_progress
+            )
+
+            progress.value = 100
+            progress.name = "Packing download..."
+            self._download_button.filename = f"{prefix}_{timestamp}.zip"
+            progress.name = "Ready"
+
+            return zip_buffer
+        finally:
+            progress.visible = False
+            progress.value = 0
+            progress.name = "Export progress"
+    
     def apply_global_filter(self, query_string):
         """
         Apply a query filter to the metadata DataFrame.
@@ -214,14 +296,14 @@ class PatchSeqNWBApp(param.Parameterized):
             controls["color_col_select"].param.value,
             controls["color_palette_select"].param.value,
             controls["size_col_select"].param.value,
-            controls["size_range_slider"].param.value_throttled,
-            controls["size_gamma_slider"].param.value_throttled,
-            controls["alpha_slider"].param.value_throttled,
-            controls["width_slider"].param.value_throttled,
-            controls["height_slider"].param.value_throttled,
-            controls["font_size_slider"].param.value_throttled,
-            controls["bins_slider"].param.value_throttled,
-            controls["hist_height_slider"].param.value_throttled,
+            controls["size_range_slider"].param.value,
+            controls["size_gamma_slider"].param.value,
+            controls["alpha_slider"].param.value,
+            controls["width_slider"].param.value,
+            controls["height_slider"].param.value,
+            controls["font_size_slider"].param.value,
+            controls["bins_slider"].param.value,
+            controls["hist_height_slider"].param.value,
             controls["show_gmm"].param.value,
             controls["n_components_x"].param.value,
             controls["n_components_y"].param.value,
@@ -268,6 +350,41 @@ class PatchSeqNWBApp(param.Parameterized):
             margin=(0, 20, 20, 20),  # top, right, bottom, left margins in pixels
             # width=800,
         )
+
+    def _sync_url_state(self, tabs, spike_controls, filter_query=None):
+        """Centralize all URL sync logic for the app."""
+
+        location = pn.state.location
+        location.sync(tabs, {'active': 'tab'})
+        location.sync(
+            self.data_holder,
+            {
+                'ephys_roi_id_selected': 'cell_id',
+                'sweep_number_selected': 'sweep',
+            },
+        )
+
+        spike_mapping = {
+            'extract_from': 'spike_extract',
+            'dim_reduction_method': 'dim_method',
+            'spike_range': 'spike_range',
+            'normalize_window_v': 'norm_v',
+            'normalize_window_dvdt': 'norm_dvdt',
+            'n_clusters': 'n_clusters',
+            'if_show_cluster_on_retro': 'show_retro',
+            'marker_size': 'marker_size',
+            'alpha_slider': 'alpha',
+            'plot_width': 'plot_width',
+            'plot_height': 'plot_height',
+            'font_size': 'font_size',
+        }
+        for control_name, url_param in spike_mapping.items():
+            location.sync(spike_controls[control_name], {'value': url_param})
+
+        self.scatter_plot.sync_controls_to_url()
+
+        if filter_query is not None:
+            location.sync(filter_query, {'value': 'query'})
 
     def create_cell_selector_panel(self, filtered_df_meta):
         """
@@ -510,7 +627,7 @@ class PatchSeqNWBApp(param.Parameterized):
             font_size,
             filtered_df_meta=None,
         ):
-            # Extract representative spikes
+            # Extract representative spikes (normalized) - with peak alignment for time-series plot
             df_v_norm, df_dvdt_norm = extract_representative_spikes(
                 df_spikes=self.raw_spike_analysis.df_spikes,
                 extract_from=extract_from,
@@ -519,6 +636,33 @@ class PatchSeqNWBApp(param.Parameterized):
                 if_normalize_dvdt=True,
                 normalize_window_dvdt=normalize_window_dvdt,
                 if_smooth_dvdt=False,
+                if_align_dvdt_peaks=True,
+                filtered_df_meta=filtered_df_meta,
+            )
+
+            # Extract representative spikes (normalized) - without peak alignment for normalized phase plot
+            df_v_norm_phase, df_dvdt_norm_phase = extract_representative_spikes(
+                df_spikes=self.raw_spike_analysis.df_spikes,
+                extract_from=extract_from,
+                if_normalize_v=True,
+                normalize_window_v=normalize_window_v,
+                if_normalize_dvdt=True,
+                normalize_window_dvdt=normalize_window_dvdt,
+                if_smooth_dvdt=False,
+                if_align_dvdt_peaks=False,
+                filtered_df_meta=filtered_df_meta,
+            )
+
+            # Extract representative spikes (unnormalized) - without peak alignment for phase plots
+            df_v_unnorm, df_dvdt_unnorm = extract_representative_spikes(
+                df_spikes=self.raw_spike_analysis.df_spikes,
+                extract_from=extract_from,
+                if_normalize_v=False,
+                normalize_window_v=normalize_window_v,
+                if_normalize_dvdt=False,
+                normalize_window_dvdt=normalize_window_dvdt,
+                if_smooth_dvdt=False,
+                if_align_dvdt_peaks=False,
                 filtered_df_meta=filtered_df_meta,
             )
 
@@ -526,6 +670,10 @@ class PatchSeqNWBApp(param.Parameterized):
             return self.raw_spike_analysis.create_raw_PCA_plots(
                 df_v_norm=df_v_norm,
                 df_dvdt_norm=df_dvdt_norm,
+                df_v_phase_norm=df_v_norm_phase,
+                df_dvdt_phase_norm=df_dvdt_norm_phase,
+                df_v_unnorm=df_v_unnorm,
+                df_dvdt_unnorm=df_dvdt_unnorm,
                 n_clusters=n_clusters,
                 alpha=alpha,
                 width=width,
@@ -556,7 +704,7 @@ class PatchSeqNWBApp(param.Parameterized):
         ]
         params = {
             k: (
-                controls[k].param.value_throttled
+                controls[k].param.value
                 if k not in ["if_show_cluster_on_retro", "dim_reduction_method"]
                 else controls[k].param.value
             )
@@ -705,6 +853,13 @@ class PatchSeqNWBApp(param.Parameterized):
             css_classes=["card", "p-4", "m-4"],
         )
 
+        if not hasattr(self, "_filter_autoload_registered"):
+            def _apply_filter_on_load():
+                apply_filter_callback(None)
+
+            pn.state.onload(_apply_filter_on_load)
+            self._filter_autoload_registered = True
+
         # Create the filtered count display
         filtered_count = pn.bind(
             lambda filtered_df: pn.pane.Markdown(
@@ -763,6 +918,25 @@ class PatchSeqNWBApp(param.Parameterized):
             dynamic=True,  # Allow dynamic updates to tab content
         )
 
+        self._sync_url_state(tabs, spike_controls, filter_query)
+        
+        # Initialize _active_tab from current tab state (important for URL loading)
+        self._active_tab = tabs.active
+        
+        # Create download button in sidebar
+        self._download_button = pn.widgets.FileDownload(
+            label="Download figures (SVG)",
+            filename="plots.zip",
+            button_type="success",
+            sizing_mode="stretch_width",
+        )
+        self._download_button.callback = self._download_svg_context_aware
+        
+        # Track active tab to change download behavior
+        def update_active_tab(event):
+            self._active_tab = event.new
+        tabs.param.watch(update_active_tab, 'active')
+
         # Create the template
         template = pn.template.BootstrapTemplate(
             title="LC-NE Patch-seq Data Explorer",
@@ -801,6 +975,10 @@ class PatchSeqNWBApp(param.Parameterized):
                     ),
                     id=self.data_holder.param.sweep_number_selected,
                 ),
+                pn.layout.Divider(margin=(10, 0)),
+                pn.pane.Markdown("### Export"),
+                self._download_button,
+                self._export_progress,
             ],
             theme="default",
         )
