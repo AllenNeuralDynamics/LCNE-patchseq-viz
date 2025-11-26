@@ -925,7 +925,7 @@ class PatchSeqNWBApp(param.Parameterized):
         
         # Create download button in sidebar
         self._download_button = pn.widgets.FileDownload(
-            label="Download figures",
+            label="Download figures (SVG)",
             filename="plots.zip",
             button_type="success",
             sizing_mode="stretch_width",
