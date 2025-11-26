@@ -412,7 +412,7 @@ class RawSpikeAnalysis:
                 register_renderer(legend_label, line)
 
             render_segment(dvdt_vals >= 0, "dV/dt > 0", "solid")
-            render_segment(dvdt_vals < 0, "dV/dt < 0", "dashed")
+            render_segment(dvdt_vals < 0, "dV/dt < 0", "solid")
 
         plots = self._init_spike_subplots(
             dim_reduction_method,
