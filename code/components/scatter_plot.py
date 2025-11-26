@@ -533,10 +533,40 @@ class ScatterPlot:
                 # Perform linear regression
                 slope, intercept, r_value, p_value, std_err = stats.linregress(x_data, y_data)
 
-                # Calculate fitted line points
+                # Calculate fitted line points over dense grid for smooth CI curve
                 x_min, x_max = x_data.min(), x_data.max()
-                x_fit = np.array([x_min, x_max])
-                y_fit = slope * x_fit + intercept
+                x_vals = np.linspace(x_min, x_max, 200)
+                y_fit = slope * x_vals + intercept
+
+                # Add confidence band for the regression line
+                n_points = len(x_data)
+                if n_points > 2:
+                    residuals = y_data - (slope * x_data + intercept)
+                    mse = np.sum(residuals ** 2) / (n_points - 2)
+                    x_mean = x_data.mean()
+                    Sxx = np.sum((x_data - x_mean) ** 2)
+                    if Sxx > 0:
+                        t_val = stats.t.ppf(0.975, n_points - 2)
+                        se_fit = np.sqrt(
+                            mse * (1 / n_points + (x_vals - x_mean) ** 2 / Sxx)
+                        )
+                        ci_upper = y_fit + t_val * se_fit
+                        ci_lower = y_fit - t_val * se_fit
+                        band_source = ColumnDataSource(
+                            {
+                                "x": np.concatenate([x_vals, x_vals[::-1]]),
+                                "y": np.concatenate([ci_upper, ci_lower[::-1]]),
+                            }
+                        )
+                        p.patch(
+                            x="x",
+                            y="y",
+                            source=band_source,
+                            fill_color="lightgray",
+                            fill_alpha=0.3,
+                            line_alpha=0,
+                            level="underlay",
+                        )
 
                 # Add fitted line
                 setting = (
@@ -544,7 +574,7 @@ class ScatterPlot:
                     if p_value < 0.05
                     else {"line_width": 2, "line_dash": "dashed"}
                 )
-                line = p.line(x_fit, y_fit, line_color="black", **setting)
+                line = p.line(x_vals, y_fit, line_color="black", **setting)
 
                 # Add legend with R² and p-value
                 legend_items = [
