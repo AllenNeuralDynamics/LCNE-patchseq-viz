@@ -61,9 +61,18 @@ class PatchSeqNWBApp(param.Parameterized):
         # Holder for currently selected cell ID.
         self.data_holder = PatchSeqNWBApp.DataHolder()
         
-        # Store figures for context-aware export
+        # Store figures and state for context-aware export
         self._cell_explorer_figures = {}
         self._active_tab = 0
+        self._export_progress = pn.widgets.Progress(
+            name="Export progress",
+            value=0,
+            max=100,
+            sizing_mode="stretch_width",
+            bar_color="success",
+            active=True,
+            visible=False,
+        )
 
         # Load and prepare metadata.
         self.df_meta = load_ephys_metadata(if_from_s3=True, if_with_seq=True, if_with_morphology=True)
@@ -180,34 +189,66 @@ class PatchSeqNWBApp(param.Parameterized):
     def _download_svg_context_aware(self):
         """Download SVGs based on the active tab."""
         from components.utils.svg_export import export_figures_to_svg_zip
-        
-        if self._active_tab == 0:  # Cell Explorer tab
-            figures = {}
-            
-            # Add scatter plot figures
-            if hasattr(self.scatter_plot, '_latest_figures') and self.scatter_plot._latest_figures:
-                figures.update(self.scatter_plot._latest_figures)
-            
-            # Add cell explorer figures (voltage/stimulus traces)
-            if self._cell_explorer_figures:
-                figures.update(self._cell_explorer_figures)
-            
-            if not figures:
-                raise RuntimeError("No figures available. Select a cell and generate scatter plot first.")
-            
-            prefix = "app_download_cell_explorer"
-        elif self._active_tab == 1:  # Spike Analysis tab
-            if not self.raw_spike_analysis._latest_figures:
-                raise RuntimeError("Generate the spike analysis plots before downloading SVGs.")
-            figures = self.raw_spike_analysis._latest_figures
-            prefix = "app_download_spike_analysis"
-        else:  # Other tabs
-            raise RuntimeError(f"SVG export not supported for tab {self._active_tab}.")
-        
-        zip_buffer, timestamp = export_figures_to_svg_zip(figures)
-        # Update the filename with timestamp before returning
-        self._download_button.filename = f"{prefix}_{timestamp}.zip"
-        return zip_buffer
+
+        progress = self._export_progress
+        progress.value = 0
+        progress.visible = True
+        progress.name = "Preparing export..."
+
+        try:
+            if self._active_tab == 0:  # Cell Explorer tab
+                figures = {}
+                progress.name = "Collecting scatter figures..."
+
+                if hasattr(self.scatter_plot, "_latest_figures") and self.scatter_plot._latest_figures:
+                    figures.update(self.scatter_plot._latest_figures)
+
+                progress.name = "Collecting cell explorer figures..."
+
+                if self._cell_explorer_figures:
+                    figures.update(self._cell_explorer_figures)
+
+                if not figures:
+                    raise RuntimeError(
+                        "No figures available. Select a cell and generate scatter plot first."
+                    )
+
+                prefix = "app_download_cell_explorer"
+            elif self._active_tab == 1:  # Spike Analysis tab
+                progress.name = "Collecting spike analysis figures..."
+
+                if not self.raw_spike_analysis._latest_figures:
+                    raise RuntimeError("Generate the spike analysis plots before downloading SVGs.")
+                figures = self.raw_spike_analysis._latest_figures
+                prefix = "app_download_spike_analysis"
+            else:  # Other tabs
+                raise RuntimeError(f"SVG export not supported for tab {self._active_tab}.")
+
+            exportable_count = sum(1 for fig in figures.values() if fig is not None)
+            if exportable_count == 0:
+                raise RuntimeError("No exportable figures available for the current tab.")
+
+            progress.value = 0
+            progress.name = f"Rendering SVGs (0/{exportable_count})"
+
+            def report_progress(current, total):
+                progress.value = min(100, int((current / total) * 100))
+                progress.name = f"Rendering SVGs ({current}/{total})"
+
+            zip_buffer, timestamp = export_figures_to_svg_zip(
+                figures, progress_callback=report_progress
+            )
+
+            progress.value = 100
+            progress.name = "Packing download..."
+            self._download_button.filename = f"{prefix}_{timestamp}.zip"
+            progress.name = "Ready"
+
+            return zip_buffer
+        finally:
+            progress.visible = False
+            progress.value = 0
+            progress.name = "Export progress"
     
     def apply_global_filter(self, query_string):
         """
@@ -884,7 +925,7 @@ class PatchSeqNWBApp(param.Parameterized):
         
         # Create download button in sidebar
         self._download_button = pn.widgets.FileDownload(
-            label="Download current plots (SVG)",
+            label="Download figures",
             filename="plots.zip",
             button_type="success",
             sizing_mode="stretch_width",
@@ -937,6 +978,7 @@ class PatchSeqNWBApp(param.Parameterized):
                 pn.layout.Divider(margin=(10, 0)),
                 pn.pane.Markdown("### Export"),
                 self._download_button,
+                self._export_progress,
             ],
             theme="default",
         )

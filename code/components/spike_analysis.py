@@ -22,8 +22,6 @@ except:
 from LCNE_patchseq_analysis import REGION_COLOR_MAPPER
 from LCNE_patchseq_analysis.pipeline_util.s3 import get_public_representative_spikes
 
-from components.utils.svg_export import export_figures_to_svg_zip
-
 
 class RawSpikeAnalysis:
     """Handles spike waveform analysis and visualization."""
