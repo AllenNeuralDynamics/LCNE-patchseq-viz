@@ -380,7 +380,7 @@ class RawSpikeAnalysis:
                 centers = np.array(centers)
                 means = np.array(means)
                 sems = np.array(sems)
-                legend_label = f"{label} ({segment_label} mean±SEM)"
+                legend_label = f"{label} (mean±SEM)"
                 band_source = ColumnDataSource(
                     {
                         "x": np.concatenate([centers, centers[::-1]]),
