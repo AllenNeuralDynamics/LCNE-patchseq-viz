@@ -574,6 +574,7 @@ class RawSpikeAnalysis:
                 legend_label=group_label,
             )
             register_renderer(group_label, renderer)
+            add_timeseries_mean_sem(p_vm, df_this, cluster_colors[i], group_label)
 
             # Plot dV/dt traces
             df_this = df_dvdt_norm.query("ephys_roi_id in @ephys_roi_ids")
@@ -593,6 +594,7 @@ class RawSpikeAnalysis:
                 legend_label=group_label,
             )
             register_renderer(group_label, renderer)
+            add_timeseries_mean_sem(p_dvdt, df_this, cluster_colors[i], group_label)
 
             # Plot phase plot (dV/dt vs V) - normalized
             df_v_this = phase_norm_v.query("ephys_roi_id in @ephys_roi_ids")
@@ -613,6 +615,13 @@ class RawSpikeAnalysis:
                 legend_label=group_label,
             )
             register_renderer(group_label, renderer)
+            add_phase_mean_sem(
+                p_phase_norm,
+                df_v_this,
+                df_dvdt_this,
+                cluster_colors[i],
+                group_label,
+            )
 
             # Plot phase plot (dV/dt vs V) - unnormalized
             if df_v_unnorm is not None and df_dvdt_unnorm is not None:
