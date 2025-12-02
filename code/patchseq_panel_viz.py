@@ -35,7 +35,7 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # Initialize Panel with Bootstrap and Tabulator extensions
-pn.extension("tabulator", "bootstrap")
+pn.extension("tabulator")
 curdoc().title = "LC-NE Patch-seq Data Explorer"
 
 
@@ -468,7 +468,7 @@ class PatchSeqNWBApp(param.Parameterized):
 
         # Set initial sweep number to first valid sweep
         if self.data_holder.sweep_number_selected == 0:
-            self.data_holder.sweep_number_selected = df_sweeps_valid.iloc[0]["sweep_number"]
+            self.data_holder.sweep_number_selected = int(df_sweeps_valid.iloc[0]["sweep_number"])
 
         # Add a slider to control the downsample factor
         downsample_factor = pn.widgets.IntSlider(
@@ -569,7 +569,7 @@ class PatchSeqNWBApp(param.Parameterized):
             """Update sweep number when table selection changes."""
             if event.new:
                 selected_index = event.new[0]
-                new_sweep = df_sweeps_valid.iloc[selected_index]["sweep_number"]
+                new_sweep = int(df_sweeps_valid.iloc[selected_index]["sweep_number"])
                 self.data_holder.sweep_number_selected = new_sweep
 
         tab_sweeps.param.watch(update_sweep_from_table, "selection")

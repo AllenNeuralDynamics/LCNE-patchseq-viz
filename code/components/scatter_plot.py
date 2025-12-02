@@ -703,7 +703,7 @@ class ScatterPlot:
                 gridplot(
                     [[y_hist, p], [None, x_hist]],
                     toolbar_location="right",
-                    merge_tools=True,
+                    merge_tools=False,
                     toolbar_options={"logo": None},
                 ),
                 pn.pane.Markdown(count_non_nan.to_markdown()),
@@ -865,6 +865,9 @@ class ScatterPlot:
                     # Use Panel's matplotlib pane instead of manual base64 conversion
                     marginalized_histograms = pn.pane.Matplotlib(fig, dpi=300, tight=True, width=400)
 
+                    # Close the figure to prevent memory leaks
+                    plt.close(fig)
+
         except Exception as e:
             logger.warning(f"Could not create marginalized KDE histogram: {e}")
             marginalized_histograms = pn.pane.Markdown("Marginalized histogram error.")
@@ -990,13 +993,15 @@ class ScatterPlot:
                             data=plot_df,
                             x=color_col,
                             y=y_col,
+                            hue=color_col,
                             ax=ax,
                             palette=color_palette_dict,
                             inner="quart",  # Show quartiles as inner elements
                             alpha=0.6,
                             cut=0,  # No extension beyond the data range
                             order=groups_order,  # Explicitly set the order
-                            width=0.5
+                            width=0.5,
+                            legend=False
                         )
 
                         # Overlay raw data points with strip plot using the same order
@@ -1014,7 +1019,7 @@ class ScatterPlot:
 
                         # Calculate and plot mean ± SEM for each group using the same order
                         groups = groups_order  # Use the same order as seaborn plots
-                        x_positions = range(len(groups))
+                        x_positions = np.arange(len(groups))
 
                         for i, group in enumerate(groups):
                             group_data = pd.to_numeric(plot_df[plot_df[color_col] == group][y_col], errors='coerce').dropna()
@@ -1041,6 +1046,7 @@ class ScatterPlot:
                             f"{group}\n(n={group_counts.get(group, 0)}, missing {group_nan_counts.get(group, 0)})" 
                             for group in groups
                         ]
+                        ax.set_xticks(x_positions)
                         ax.set_xticklabels(group_labels_with_counts, rotation=30, ha='right')
                         ax.set_ylabel(y_col)
                         ax.set_xlabel(color_col)
@@ -1053,6 +1059,9 @@ class ScatterPlot:
 
                         # Use Panel's matplotlib pane
                         violin_plot = pn.pane.Matplotlib(fig, dpi=300, tight=True, width=400)
+
+                        # Close the figure to prevent memory leaks
+                        plt.close(fig)
 
         except Exception as e:
             logger.warning(f"Could not create violin plot: {e}")
