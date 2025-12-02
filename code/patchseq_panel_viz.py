@@ -480,7 +480,7 @@ class PatchSeqNWBApp(param.Parameterized):
 
         # Bind the plotting function to the data holder's sweep number
         bokeh_panel = pn.bind(
-            PatchSeqNWBApp.update_bokeh,
+            self.update_bokeh,
             raw=raw_this_cell,
             sweep=self.data_holder.param.sweep_number_selected,
             downsample_factor=downsample_factor.param.value_throttled,
