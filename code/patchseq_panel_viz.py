@@ -6,7 +6,9 @@ panel serve panel_nwb_viz.py --dev --allow-websocket-origin=codeocean.allenneura
 """
 
 import logging
+import re
 
+import numpy as np
 import pandas as pd
 import panel as pn
 import param
@@ -39,6 +41,34 @@ logger = logging.getLogger(__name__)
 # Initialize Panel with Bootstrap and Tabulator extensions
 pn.extension("tabulator")
 curdoc().title = "LC-NE Patch-seq Data Explorer"
+
+
+def add_efel_asymmetry_columns(df_meta: pd.DataFrame) -> None:
+    rise_cols = {}
+    fall_cols = {}
+
+    for col in df_meta.columns:
+        if not isinstance(col, str):
+            continue
+        if not col.startswith("efel_") or " @ " not in col:
+            continue
+        metric, suffix = col.split(" @ ", 1)
+        match = re.match(r"^(efel_.+?)_(rise|fall)(.*)$", metric)
+        if not match:
+            continue
+        base = f"{match.group(1)}{match.group(3)}"
+        key = f"{base} @ {suffix}"
+        if match.group(2) == "rise":
+            rise_cols[key] = col
+        else:
+            fall_cols[key] = col
+
+    for key in sorted(set(rise_cols) & set(fall_cols)):
+        base, suffix = key.split(" @ ", 1)
+        new_col = f"{base}_asymmetry @ {suffix}"
+        rise_vals = pd.to_numeric(df_meta[rise_cols[key]], errors="coerce")
+        fall_vals = pd.to_numeric(df_meta[fall_cols[key]], errors="coerce")
+        df_meta[new_col] = np.where(fall_vals != 0, rise_vals / fall_vals, np.nan)
 
 
 class PatchSeqNWBApp(param.Parameterized):
@@ -80,6 +110,7 @@ class PatchSeqNWBApp(param.Parameterized):
         self.df_meta = load_ephys_metadata(
             if_from_s3=True, if_with_seq=True, if_with_morphology=True
         )
+        add_efel_asymmetry_columns(self.df_meta)
         self.df_meta.rename(
             columns={
                 "x": "X (A --> P)",
