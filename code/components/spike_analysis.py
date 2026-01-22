@@ -8,12 +8,20 @@ import numpy as np
 import pandas as pd
 import panel as pn
 from bokeh.layouts import gridplot
-from bokeh.models import BoxZoomTool, ColumnDataSource, CustomJS, HoverTool, Span, WheelZoomTool
+from bokeh.models import (
+    BoxZoomTool,
+    ColumnDataSource,
+    CustomJS,
+    HoverTool,
+    Span,
+    WheelZoomTool,
+)
 from bokeh.plotting import figure
 from scipy.stats import multivariate_normal
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score
+
 try:  # UMAP does not work in Hugging Face Spaces
     from umap import UMAP
 except:
@@ -33,8 +41,14 @@ class RawSpikeAnalysis:
         self._latest_figures = {}
 
         # Load extracted raw spike data
-        self.df_spikes = get_public_representative_spikes()
+        self.spike_cache = {}
+        self.df_spikes = self.get_spikes("average")
         self.extract_from_options = self.df_spikes.index.get_level_values(1).unique()
+
+    def get_spikes(self, spike_type: str) -> pd.DataFrame:
+        if spike_type not in self.spike_cache:
+            self.spike_cache[spike_type] = get_public_representative_spikes(spike_type)
+        return self.spike_cache[spike_type]
 
     def create_plot_controls(self) -> dict:
         """Create control widgets for spike analysis."""
@@ -43,6 +57,12 @@ class RawSpikeAnalysis:
                 name="Extract spikes from",
                 options=sorted(self.extract_from_options.tolist()),
                 value="long_square_rheo, min",
+                sizing_mode="stretch_width",
+            ),
+            "spike_type": pn.widgets.Select(
+                name="Which spike in a train",
+                options=["average", "first", "second", "last"],
+                value="average",
                 sizing_mode="stretch_width",
             ),
             "dim_reduction_method": pn.widgets.Select(
@@ -171,10 +191,14 @@ class RawSpikeAnalysis:
         }
 
         # Save data
-        df_v_proj = pd.DataFrame(v_proj[:, :n_components], index=df_v_norm.index, columns=columns)
+        df_v_proj = pd.DataFrame(
+            v_proj[:, :n_components], index=df_v_norm.index, columns=columns
+        )
 
         # Add cluster information to df_v_norm
-        clusters_df = pd.DataFrame(clusters, index=df_v_norm.index, columns=["cluster_id"])
+        clusters_df = pd.DataFrame(
+            clusters, index=df_v_norm.index, columns=["cluster_id"]
+        )
         self.df_meta = self.df_meta[
             [col for col in self.df_meta.columns if col != "cluster_id"]
         ].merge(clusters_df, on="ephys_roi_id", how="left")
@@ -246,38 +270,50 @@ class RawSpikeAnalysis:
         """Create plots for spike analysis including dimensionality reduction and clustering."""
         # Filter data based on spike_range
         df_v_norm = df_v_norm.loc[
-            :, (df_v_norm.columns >= spike_range[0]) & (df_v_norm.columns <= spike_range[1])
+            :,
+            (df_v_norm.columns >= spike_range[0])
+            & (df_v_norm.columns <= spike_range[1]),
         ]
         df_dvdt_norm = df_dvdt_norm.loc[
-            :, (df_dvdt_norm.columns >= spike_range[0]) & (df_dvdt_norm.columns <= spike_range[1])
+            :,
+            (df_dvdt_norm.columns >= spike_range[0])
+            & (df_dvdt_norm.columns <= spike_range[1]),
         ]
 
         if df_v_phase_norm is not None:
             df_v_phase_norm = df_v_phase_norm.loc[
-                :, (df_v_phase_norm.columns >= spike_range[0])
-                & (df_v_phase_norm.columns <= spike_range[1])
+                :,
+                (df_v_phase_norm.columns >= spike_range[0])
+                & (df_v_phase_norm.columns <= spike_range[1]),
             ]
         if df_dvdt_phase_norm is not None:
             df_dvdt_phase_norm = df_dvdt_phase_norm.loc[
-                :, (df_dvdt_phase_norm.columns >= spike_range[0])
-                & (df_dvdt_phase_norm.columns <= spike_range[1])
+                :,
+                (df_dvdt_phase_norm.columns >= spike_range[0])
+                & (df_dvdt_phase_norm.columns <= spike_range[1]),
             ]
-        
+
         # Filter unnormalized data if provided
         if df_v_unnorm is not None:
             df_v_unnorm = df_v_unnorm.loc[
-                :, (df_v_unnorm.columns >= spike_range[0]) & (df_v_unnorm.columns <= spike_range[1])
+                :,
+                (df_v_unnorm.columns >= spike_range[0])
+                & (df_v_unnorm.columns <= spike_range[1]),
             ]
         if df_dvdt_unnorm is not None:
             df_dvdt_unnorm = df_dvdt_unnorm.loc[
-                :, (df_dvdt_unnorm.columns >= spike_range[0]) & (df_dvdt_unnorm.columns <= spike_range[1])
+                :,
+                (df_dvdt_unnorm.columns >= spike_range[0])
+                & (df_dvdt_unnorm.columns <= spike_range[1]),
             ]
 
         # Perform dimensionality reduction and clustering
         df_v_proj, clusters, reducer, metrics = self.perform_dim_reduction_clustering(
             df_v_norm, n_clusters, dim_reduction_method
         )
-        cluster_colors = ["black", "darkgray", "darkblue", "cyan", "darkorange"][:n_clusters]
+        cluster_colors = ["black", "darkgray", "darkblue", "cyan", "darkorange"][
+            :n_clusters
+        ]
 
         # Common plot settings
         plot_settings = dict(width=width, height=height)
@@ -331,7 +367,9 @@ class RawSpikeAnalysis:
             )
             register_renderer(legend_label, line)
 
-        def add_phase_mean_sem(fig, df_v_values, df_dvdt_values, color, label, n_bins=100):
+        def add_phase_mean_sem(
+            fig, df_v_values, df_dvdt_values, color, label, n_bins=100
+        ):
             if (
                 df_v_values is None
                 or df_dvdt_values is None
@@ -374,7 +412,9 @@ class RawSpikeAnalysis:
                     values = y_seg[bin_mask]
                     centers.append(bin_centers[b_idx])
                     means.append(np.mean(values))
-                    sems.append(np.std(values, ddof=1) / np.sqrt(count) if count > 1 else 0.0)
+                    sems.append(
+                        np.std(values, ddof=1) / np.sqrt(count) if count > 1 else 0.0
+                    )
                 if len(centers) < 2:
                     return
                 centers = np.array(centers)
@@ -440,7 +480,7 @@ class RawSpikeAnalysis:
         for i in df_v_proj["cluster_id"].unique():
             # Add dots
             querystr = "cluster_id == @i"
-            group_label = f"Cluster {i+1}"
+            group_label = f"Cluster {i + 1}"
             if not if_show_cluster_on_retro:
                 querystr += " and `injection region` == 'Non-Retro'"
                 group_label += " (Non-Retro)"
@@ -463,7 +503,9 @@ class RawSpikeAnalysis:
             register_renderer(group_label, scatter)
 
             # Attach the callback to the selection changes
-            source.selected.on_change("indices", partial(self.update_ephys_roi_id, source.data))
+            source.selected.on_change(
+                "indices", partial(self.update_ephys_roi_id, source.data)
+            )
 
             # Add contours
             values = (
@@ -480,7 +522,9 @@ class RawSpikeAnalysis:
             pos = np.dstack((x, y))
             rv = multivariate_normal(mean, cov)
             z = rv.pdf(pos)
-            add_counter(p_embedding, x, y, z, levels=3, line_color=cluster_colors[i], alpha=1)
+            add_counter(
+                p_embedding, x, y, z, levels=3, line_color=cluster_colors[i], alpha=1
+            )
 
         # Add metrics to the plot
         p_embedding.title.text = (
@@ -538,7 +582,7 @@ class RawSpikeAnalysis:
         # Plot voltage and dV/dt traces
         for i in range(n_clusters):
             query_str = "cluster_id == @i"
-            group_label = f"Cluster {i+1}"
+            group_label = f"Cluster {i + 1}"
             if not if_show_cluster_on_retro:
                 query_str += " and `injection region` == 'Non-Retro'"
                 group_label += " (Non-Retro)"
@@ -626,7 +670,9 @@ class RawSpikeAnalysis:
             # Plot phase plot (dV/dt vs V) - unnormalized
             if df_v_unnorm is not None and df_dvdt_unnorm is not None:
                 df_v_unnorm_this = df_v_unnorm.query("ephys_roi_id in @ephys_roi_ids")
-                df_dvdt_unnorm_this = df_dvdt_unnorm.query("ephys_roi_id in @ephys_roi_ids")
+                df_dvdt_unnorm_this = df_dvdt_unnorm.query(
+                    "ephys_roi_id in @ephys_roi_ids"
+                )
                 source = ColumnDataSource(
                     {
                         "xs": df_v_unnorm_this.values.tolist(),
@@ -648,7 +694,9 @@ class RawSpikeAnalysis:
         for region in self.df_meta["injection region"].unique():
             if region == "Non-Retro":
                 continue
-            roi_ids = self.df_meta.query("`injection region` == @region").ephys_roi_id.tolist()
+            roi_ids = self.df_meta.query(
+                "`injection region` == @region"
+            ).ephys_roi_id.tolist()
             legend_label = f"{region}, n={len(roi_ids)}"
 
             source = ColumnDataSource(df_v_proj.query("ephys_roi_id in @roi_ids"))
@@ -665,7 +713,9 @@ class RawSpikeAnalysis:
             register_renderer(legend_label, scatter)
 
             # Attach the callback to the selection changes
-            source.selected.on_change("indices", partial(self.update_ephys_roi_id, source.data))
+            source.selected.on_change(
+                "indices", partial(self.update_ephys_roi_id, source.data)
+            )
 
             df_v_region = df_v_norm.query("ephys_roi_id in @roi_ids")
             ys = df_v_region.values
@@ -688,7 +738,9 @@ class RawSpikeAnalysis:
                 **line_props,
             )
             register_renderer(legend_label, renderer)
-            add_timeseries_mean_sem(p_vm, df_v_region, REGION_COLOR_MAPPER[region], legend_label)
+            add_timeseries_mean_sem(
+                p_vm, df_v_region, REGION_COLOR_MAPPER[region], legend_label
+            )
 
             df_dvdt_region = df_dvdt_norm.query("ephys_roi_id in @roi_ids")
             ys = df_dvdt_region.values
@@ -701,7 +753,9 @@ class RawSpikeAnalysis:
                 **line_props,
             )
             register_renderer(legend_label, renderer)
-            add_timeseries_mean_sem(p_dvdt, df_dvdt_region, REGION_COLOR_MAPPER[region], legend_label)
+            add_timeseries_mean_sem(
+                p_dvdt, df_dvdt_region, REGION_COLOR_MAPPER[region], legend_label
+            )
 
             # Plot phase plot (dV/dt vs V) for regions - normalized
             df_v_norm_region = phase_norm_v.query("ephys_roi_id in @roi_ids")
@@ -728,7 +782,9 @@ class RawSpikeAnalysis:
             # Plot phase plot (dV/dt vs V) for regions - unnormalized
             if df_v_unnorm is not None and df_dvdt_unnorm is not None:
                 v_vals_unnorm = df_v_unnorm.query("ephys_roi_id in @roi_ids").values
-                dvdt_vals_unnorm = df_dvdt_unnorm.query("ephys_roi_id in @roi_ids").values
+                dvdt_vals_unnorm = df_dvdt_unnorm.query(
+                    "ephys_roi_id in @roi_ids"
+                ).values
                 renderer = p_phase.multi_line(
                     xs=v_vals_unnorm.tolist(),
                     ys=dvdt_vals_unnorm.tolist(),
@@ -758,7 +814,7 @@ class RawSpikeAnalysis:
         )
         p_vm.add_tools(hovertool)
         p_dvdt.add_tools(hovertool)
-        
+
         hovertool = HoverTool(
             tooltips=[("ephys_roi_id", "@ephys_roi_id")],
             attachment="right",
@@ -770,7 +826,7 @@ class RawSpikeAnalysis:
             attachment="right",
         )
         p_phase.add_tools(hovertool)
-        
+
         # Add boxzoomtool to phase plot
         box_zoom_x = BoxZoomTool(dimensions="auto")
         p_phase.add_tools(box_zoom_x)
@@ -779,7 +835,7 @@ class RawSpikeAnalysis:
         box_zoom_x = BoxZoomTool(dimensions="auto")
         p_phase_norm.add_tools(box_zoom_x)
         p_phase_norm.toolbar.active_drag = box_zoom_x
-        
+
         legend_configs = {
             p_vm: {"location": "top_right", "orientation": "vertical", "ncols": 1},
             p_dvdt: {"location": "top_right", "orientation": "vertical", "ncols": 1},
@@ -904,9 +960,9 @@ class RawSpikeAnalysis:
     def _style_subplots(figures, font_size):
         """Apply consistent font styling across subplots."""
         for fig in figures:
-            fig.title.text_font_size = f"{font_size+2}pt"
-            fig.xaxis.axis_label_text_font_size = f"{font_size+2}pt"
-            fig.yaxis.axis_label_text_font_size = f"{font_size+2}pt"
+            fig.title.text_font_size = f"{font_size + 2}pt"
+            fig.xaxis.axis_label_text_font_size = f"{font_size + 2}pt"
+            fig.yaxis.axis_label_text_font_size = f"{font_size + 2}pt"
             fig.xaxis.major_label_text_font_size = f"{font_size}pt"
             fig.yaxis.major_label_text_font_size = f"{font_size}pt"
             if fig.legend:
