@@ -6,7 +6,9 @@ panel serve panel_nwb_viz.py --dev --allow-websocket-origin=codeocean.allenneura
 """
 
 import logging
+import re
 
+import numpy as np
 import pandas as pd
 import panel as pn
 import param
@@ -25,7 +27,9 @@ from LCNE_patchseq_analysis.pipeline_util.s3 import (
     get_public_url_sweep,
     load_efel_features_from_roi,
 )
-from LCNE_patchseq_analysis.population_analysis.spikes import extract_representative_spikes
+from LCNE_patchseq_analysis.population_analysis.spikes import (
+    extract_representative_spikes,
+)
 
 from components.scatter_plot import ScatterPlot
 from components.spike_analysis import RawSpikeAnalysis
@@ -37,6 +41,34 @@ logger = logging.getLogger(__name__)
 # Initialize Panel with Bootstrap and Tabulator extensions
 pn.extension("tabulator")
 curdoc().title = "LC-NE Patch-seq Data Explorer"
+
+
+def add_efel_asymmetry_columns(df_meta: pd.DataFrame) -> None:
+    rise_cols = {}
+    fall_cols = {}
+
+    for col in df_meta.columns:
+        if not isinstance(col, str):
+            continue
+        if not col.startswith("efel_") or " @ " not in col:
+            continue
+        metric, suffix = col.split(" @ ", 1)
+        match = re.match(r"^(efel_.+?)_(rise|fall)(.*)$", metric)
+        if not match:
+            continue
+        base = f"{match.group(1)}{match.group(3)}"
+        key = f"{base} @ {suffix}"
+        if match.group(2) == "rise":
+            rise_cols[key] = col
+        else:
+            fall_cols[key] = col
+
+    for key in sorted(set(rise_cols) & set(fall_cols)):
+        base, suffix = key.split(" @ ", 1)
+        new_col = f"{base}_asymmetry @ {suffix}"
+        rise_vals = pd.to_numeric(df_meta[rise_cols[key]], errors="coerce")
+        fall_vals = pd.to_numeric(df_meta[fall_cols[key]], errors="coerce")
+        df_meta[new_col] = np.where(fall_vals != 0, rise_vals / fall_vals, np.nan)
 
 
 class PatchSeqNWBApp(param.Parameterized):
@@ -60,7 +92,7 @@ class PatchSeqNWBApp(param.Parameterized):
         """
         # Holder for currently selected cell ID.
         self.data_holder = PatchSeqNWBApp.DataHolder()
-        
+
         # Store figures and state for context-aware export
         self._cell_explorer_figures = {}
         self._active_tab = 0
@@ -75,7 +107,10 @@ class PatchSeqNWBApp(param.Parameterized):
         )
 
         # Load and prepare metadata.
-        self.df_meta = load_ephys_metadata(if_from_s3=True, if_with_seq=True, if_with_morphology=True)
+        self.df_meta = load_ephys_metadata(
+            if_from_s3=True, if_with_seq=True, if_with_morphology=True
+        )
+        add_efel_asymmetry_columns(self.df_meta)
         self.df_meta.rename(
             columns={
                 "x": "X (A --> P)",
@@ -99,8 +134,12 @@ class PatchSeqNWBApp(param.Parameterized):
             "Y (D --> V)",
         ]
         # Turn Date to datetime
-        self.df_meta.loc[:, "Date_str"] = self.df_meta["Date"]  # Keep the original Date as string
-        self.df_meta.loc[:, "Date"] = pd.to_datetime(self.df_meta["Date"], errors="coerce")
+        self.df_meta.loc[:, "Date_str"] = self.df_meta[
+            "Date"
+        ]  # Keep the original Date as string
+        self.df_meta.loc[:, "Date"] = pd.to_datetime(
+            self.df_meta["Date"], errors="coerce"
+        )
 
         # Initialize scatter plot component
         self.scatter_plot = ScatterPlot(self.df_meta, self.data_holder)
@@ -144,7 +183,7 @@ class PatchSeqNWBApp(param.Parameterized):
             sizing_mode="stretch_width",
         )
         stim_plot.line(time, stimulus, line_width=1.5, color="firebrick")
-        
+
         # Store figures for export
         self._cell_explorer_figures = {
             "voltage_trace": voltage_plot,
@@ -200,7 +239,10 @@ class PatchSeqNWBApp(param.Parameterized):
                 figures = {}
                 progress.name = "Collecting scatter figures..."
 
-                if hasattr(self.scatter_plot, "_latest_figures") and self.scatter_plot._latest_figures:
+                if (
+                    hasattr(self.scatter_plot, "_latest_figures")
+                    and self.scatter_plot._latest_figures
+                ):
                     figures.update(self.scatter_plot._latest_figures)
 
                 progress.name = "Collecting cell explorer figures..."
@@ -218,15 +260,21 @@ class PatchSeqNWBApp(param.Parameterized):
                 progress.name = "Collecting spike analysis figures..."
 
                 if not self.raw_spike_analysis._latest_figures:
-                    raise RuntimeError("Generate the spike analysis plots before downloading SVGs.")
+                    raise RuntimeError(
+                        "Generate the spike analysis plots before downloading SVGs."
+                    )
                 figures = self.raw_spike_analysis._latest_figures
                 prefix = "app_download_spike_analysis"
             else:  # Other tabs
-                raise RuntimeError(f"SVG export not supported for tab {self._active_tab}.")
+                raise RuntimeError(
+                    f"SVG export not supported for tab {self._active_tab}."
+                )
 
             exportable_count = sum(1 for fig in figures.values() if fig is not None)
             if exportable_count == 0:
-                raise RuntimeError("No exportable figures available for the current tab.")
+                raise RuntimeError(
+                    "No exportable figures available for the current tab."
+                )
 
             progress.value = 0
             progress.name = f"Rendering SVGs (0/{exportable_count})"
@@ -249,7 +297,7 @@ class PatchSeqNWBApp(param.Parameterized):
             progress.visible = False
             progress.value = 0
             progress.name = "Export progress"
-    
+
     def apply_global_filter(self, query_string):
         """
         Apply a query filter to the metadata DataFrame.
@@ -355,36 +403,37 @@ class PatchSeqNWBApp(param.Parameterized):
         """Centralize all URL sync logic for the app."""
 
         location = pn.state.location
-        location.sync(tabs, {'active': 'tab'})
+        location.sync(tabs, {"active": "tab"})
         location.sync(
             self.data_holder,
             {
-                'ephys_roi_id_selected': 'cell_id',
-                'sweep_number_selected': 'sweep',
+                "ephys_roi_id_selected": "cell_id",
+                "sweep_number_selected": "sweep",
             },
         )
 
         spike_mapping = {
-            'extract_from': 'spike_extract',
-            'dim_reduction_method': 'dim_method',
-            'spike_range': 'spike_range',
-            'normalize_window_v': 'norm_v',
-            'normalize_window_dvdt': 'norm_dvdt',
-            'n_clusters': 'n_clusters',
-            'if_show_cluster_on_retro': 'show_retro',
-            'marker_size': 'marker_size',
-            'alpha_slider': 'alpha',
-            'plot_width': 'plot_width',
-            'plot_height': 'plot_height',
-            'font_size': 'font_size',
+            "extract_from": "spike_extract",
+            "spike_type": "spike_type",
+            "dim_reduction_method": "dim_method",
+            "spike_range": "spike_range",
+            "normalize_window_v": "norm_v",
+            "normalize_window_dvdt": "norm_dvdt",
+            "n_clusters": "n_clusters",
+            "if_show_cluster_on_retro": "show_retro",
+            "marker_size": "marker_size",
+            "alpha_slider": "alpha",
+            "plot_width": "plot_width",
+            "plot_height": "plot_height",
+            "font_size": "font_size",
         }
         for control_name, url_param in spike_mapping.items():
-            location.sync(spike_controls[control_name], {'value': url_param})
+            location.sync(spike_controls[control_name], {"value": url_param})
 
         self.scatter_plot.sync_controls_to_url()
 
         if filter_query is not None:
-            location.sync(filter_query, {'value': 'query'})
+            location.sync(filter_query, {"value": "query"})
 
     def create_cell_selector_panel(self, filtered_df_meta):
         """
@@ -433,7 +482,11 @@ class PatchSeqNWBApp(param.Parameterized):
             if event.new:
                 selected_index = event.new[0]
                 self.data_holder.ephys_roi_id_selected = str(
-                    int(self.data_holder.filtered_df_meta.iloc[selected_index]["ephys_roi_id"])
+                    int(
+                        self.data_holder.filtered_df_meta.iloc[selected_index][
+                            "ephys_roi_id"
+                        ]
+                    )
                 )
 
         tab_df_meta.param.watch(update_sweep_view_from_table, "selection")
@@ -463,12 +516,16 @@ class PatchSeqNWBApp(param.Parameterized):
         raw_this_cell = PatchSeqNWB(ephys_roi_id=ephys_roi_id, if_load_metadata=False)
 
         # Now let's get df sweep from the eFEL enriched one
-        df_sweeps = load_efel_features_from_roi(ephys_roi_id, if_from_s3=True)["df_sweeps"]
+        df_sweeps = load_efel_features_from_roi(ephys_roi_id, if_from_s3=True)[
+            "df_sweeps"
+        ]
         df_sweeps_valid = df_sweeps.query("passed == passed")
 
         # Set initial sweep number to first valid sweep
         if self.data_holder.sweep_number_selected == 0:
-            self.data_holder.sweep_number_selected = int(df_sweeps_valid.iloc[0]["sweep_number"])
+            self.data_holder.sweep_number_selected = int(
+                df_sweeps_valid.iloc[0]["sweep_number"]
+            )
 
         # Add a slider to control the downsample factor
         downsample_factor = pn.widgets.IntSlider(
@@ -494,10 +551,15 @@ class PatchSeqNWBApp(param.Parameterized):
                 images.append(pn.pane.PNG(s3_url["sweep"], width=800, height=400))
             if isinstance(s3_url, dict) and "spikes" in s3_url:
                 images.append(pn.pane.PNG(s3_url["spikes"], width=800, height=400))
-            return pn.Column(*images) if images else pn.pane.Markdown("No S3 images available")
+            return (
+                pn.Column(*images)
+                if images
+                else pn.pane.Markdown("No S3 images available")
+            )
 
         s3_sweep_images_panel = pn.bind(
-            get_s3_sweep_images, sweep_number=self.data_holder.param.sweep_number_selected
+            get_s3_sweep_images,
+            sweep_number=self.data_holder.param.sweep_number_selected,
         )
         sweep_pane = pn.Column(
             s3_sweep_images_panel,
@@ -540,25 +602,33 @@ class PatchSeqNWBApp(param.Parameterized):
         if hasattr(tab_sweeps, "style"):
             tab_sweeps.style.apply(
                 PatchSeqNWBApp.highlight_selected_rows,
-                highlight_subset=df_sweeps_valid.query("passed == True")["sweep_number"].tolist(),
+                highlight_subset=df_sweeps_valid.query("passed == True")[
+                    "sweep_number"
+                ].tolist(),
                 color="lightgreen",
                 fields=["passed"],
                 axis=1,
             ).apply(
                 PatchSeqNWBApp.highlight_selected_rows,
-                highlight_subset=df_sweeps_valid.query("passed != passed")["sweep_number"].tolist(),
+                highlight_subset=df_sweeps_valid.query("passed != passed")[
+                    "sweep_number"
+                ].tolist(),
                 color="salmon",
                 fields=["passed"],
                 axis=1,
             ).apply(
                 PatchSeqNWBApp.highlight_selected_rows,
-                highlight_subset=df_sweeps_valid.query("passed == False")["sweep_number"].tolist(),
+                highlight_subset=df_sweeps_valid.query("passed == False")[
+                    "sweep_number"
+                ].tolist(),
                 color="yellow",
                 fields=["passed"],
                 axis=1,
             ).apply(
                 PatchSeqNWBApp.highlight_selected_rows,
-                highlight_subset=df_sweeps_valid.query("num_spikes > 0")["sweep_number"].tolist(),
+                highlight_subset=df_sweeps_valid.query("num_spikes > 0")[
+                    "sweep_number"
+                ].tolist(),
                 color="lightgreen",
                 fields=["num_spikes"],
                 axis=1,
@@ -614,6 +684,7 @@ class PatchSeqNWBApp(param.Parameterized):
 
         def update_spike_plots(
             extract_from,
+            spike_type,
             n_clusters,
             alpha,
             width,
@@ -627,9 +698,10 @@ class PatchSeqNWBApp(param.Parameterized):
             font_size,
             filtered_df_meta=None,
         ):
+            df_spikes = self.raw_spike_analysis.get_spikes(spike_type)
             # Extract representative spikes (normalized) - with peak alignment for time-series plot
             df_v_norm, df_dvdt_norm = extract_representative_spikes(
-                df_spikes=self.raw_spike_analysis.df_spikes,
+                df_spikes=df_spikes,
                 extract_from=extract_from,
                 if_normalize_v=True,
                 normalize_window_v=normalize_window_v,
@@ -642,7 +714,7 @@ class PatchSeqNWBApp(param.Parameterized):
 
             # Extract representative spikes (normalized) - without peak alignment for normalized phase plot
             df_v_norm_phase, df_dvdt_norm_phase = extract_representative_spikes(
-                df_spikes=self.raw_spike_analysis.df_spikes,
+                df_spikes=df_spikes,
                 extract_from=extract_from,
                 if_normalize_v=True,
                 normalize_window_v=normalize_window_v,
@@ -655,7 +727,7 @@ class PatchSeqNWBApp(param.Parameterized):
 
             # Extract representative spikes (unnormalized) - without peak alignment for phase plots
             df_v_unnorm, df_dvdt_unnorm = extract_representative_spikes(
-                df_spikes=self.raw_spike_analysis.df_spikes,
+                df_spikes=df_spikes,
                 extract_from=extract_from,
                 if_normalize_v=False,
                 normalize_window_v=normalize_window_v,
@@ -714,6 +786,7 @@ class PatchSeqNWBApp(param.Parameterized):
         spike_plots = pn.bind(
             update_spike_plots,
             extract_from=controls["extract_from"].param.value,
+            spike_type=controls["spike_type"].param.value,
             n_clusters=params["n_clusters"],
             alpha=params["alpha_slider"],
             width=params["plot_width"],
@@ -741,19 +814,22 @@ class PatchSeqNWBApp(param.Parameterized):
         s3_cell_summary_plot = pn.Column(
             pn.bind(
                 lambda ephys_roi_id: pn.pane.Markdown(
-                    "## Cell summary plot" + (f" for {ephys_roi_id}" if ephys_roi_id else "")
+                    "## Cell summary plot"
+                    + (f" for {ephys_roi_id}" if ephys_roi_id else "")
                 ),
                 ephys_roi_id=self.data_holder.param.ephys_roi_id_selected,
             ),
             pn.bind(
-                get_s3_cell_summary_plot, ephys_roi_id=self.data_holder.param.ephys_roi_id_selected
+                get_s3_cell_summary_plot,
+                ephys_roi_id=self.data_holder.param.ephys_roi_id_selected,
             ),
             sizing_mode="stretch_width",
         )
 
         # Bind the sweep panel to the current cell selection.
         pane_one_cell = pn.bind(
-            self.create_sweep_panel, ephys_roi_id=self.data_holder.param.ephys_roi_id_selected
+            self.create_sweep_panel,
+            ephys_roi_id=self.data_holder.param.ephys_roi_id_selected,
         )
 
         # Create a toggle button for showing/hiding raw sweeps
@@ -765,13 +841,16 @@ class PatchSeqNWBApp(param.Parameterized):
         # Link the button to the toggle
         def toggle_sweeps(event):
             show_sweeps.value = not show_sweeps.value
-            show_sweeps_button.name = "Hide raw sweeps" if show_sweeps.value else "Show raw sweeps"
+            show_sweeps_button.name = (
+                "Hide raw sweeps" if show_sweeps.value else "Show raw sweeps"
+            )
 
         show_sweeps_button.on_click(toggle_sweeps)
 
         # Create a dynamic layout that includes pane_one_cell only when show_sweeps is True
         dynamic_content = pn.bind(
-            lambda show: pn.Column(pane_one_cell) if show else pn.Column(), show_sweeps.param.value
+            lambda show: pn.Column(pane_one_cell) if show else pn.Column(),
+            show_sweeps.param.value,
         )
 
         # --- Connect global filter components ---
@@ -854,6 +933,7 @@ class PatchSeqNWBApp(param.Parameterized):
         )
 
         if not hasattr(self, "_filter_autoload_registered"):
+
             def _apply_filter_on_load():
                 apply_filter_callback(None)
 
@@ -883,7 +963,9 @@ class PatchSeqNWBApp(param.Parameterized):
                 pn.Card(
                     pn.Row(
                         pn.Column(
-                            pn.pane.Markdown("### Controls", css_classes=["card-title"]),
+                            pn.pane.Markdown(
+                                "### Controls", css_classes=["card-title"]
+                            ),
                             *spike_controls.values(),
                             width=250,
                         ),
@@ -908,7 +990,8 @@ class PatchSeqNWBApp(param.Parameterized):
                 "Feature Distribution",
                 pn.Card(
                     pn.pane.PNG(
-                        S3_PUBLIC_URL_BASE + "/efel/cell_stats/distribution_all_features.png",
+                        S3_PUBLIC_URL_BASE
+                        + "/efel/cell_stats/distribution_all_features.png",
                         width=1300,
                     ),
                     title="Distribution of all features",
@@ -919,10 +1002,10 @@ class PatchSeqNWBApp(param.Parameterized):
         )
 
         self._sync_url_state(tabs, spike_controls, filter_query)
-        
+
         # Initialize _active_tab from current tab state (important for URL loading)
         self._active_tab = tabs.active
-        
+
         # Create download button in sidebar
         self._download_button = pn.widgets.FileDownload(
             label="Download figures (SVG)",
@@ -931,11 +1014,12 @@ class PatchSeqNWBApp(param.Parameterized):
             sizing_mode="stretch_width",
         )
         self._download_button.callback = self._download_svg_context_aware
-        
+
         # Track active tab to change download behavior
         def update_active_tab(event):
             self._active_tab = event.new
-        tabs.param.watch(update_active_tab, 'active')
+
+        tabs.param.watch(update_active_tab, "active")
 
         # Create the template
         template = pn.template.BootstrapTemplate(
