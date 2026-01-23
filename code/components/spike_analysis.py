@@ -10,12 +10,15 @@ import panel as pn
 from bokeh.layouts import gridplot
 from bokeh.models import (
     BoxZoomTool,
+    ColorBar,
     ColumnDataSource,
     CustomJS,
     HoverTool,
+    LinearColorMapper,
     Span,
     WheelZoomTool,
 )
+from bokeh.palettes import Blues256, Reds256, diverging_palette
 from bokeh.plotting import figure
 from scipy.stats import multivariate_normal
 from sklearn.cluster import KMeans
@@ -28,7 +31,9 @@ except:
     UMAP = None
 
 from LCNE_patchseq_analysis import REGION_COLOR_MAPPER
+from LCNE_patchseq_analysis.data_util.mesh import trimesh_to_bokeh_data
 from LCNE_patchseq_analysis.pipeline_util.s3 import get_public_representative_spikes
+from LCNE_patchseq_analysis.pipeline_util.s3 import load_mesh_from_s3
 
 
 class RawSpikeAnalysis:
@@ -211,6 +216,8 @@ class RawSpikeAnalysis:
                     "injection region",
                     "cell_summary_url",
                     "jem-id_cell_specimen",
+                    "X (A --> P)",
+                    "Y (D --> V)",
                 ]
             ],
             on="ephys_roi_id",
@@ -460,6 +467,7 @@ class RawSpikeAnalysis:
             plot_settings,
         )
         p_embedding = plots["embedding"]
+        p_component_y = plots["component_y"]
         p_vm = plots["vm"]
         p_dvdt = plots["dvdt"]
         p_phase_norm = plots["phase_norm"]
@@ -532,6 +540,41 @@ class RawSpikeAnalysis:
             f"Silhouette Score: {metrics['silhouette_avg']:.3f}\n"
         )
         p_embedding.toolbar.active_scroll = p_embedding.select_one(WheelZoomTool)
+
+        component_col = f"{dim_reduction_method}1"
+        if component_col in df_v_proj.columns:
+            self._add_lc_mesh_overlay(p_component_y)
+            pc_values = pd.to_numeric(df_v_proj[component_col], errors="coerce")
+            if pc_values.notna().any():
+                source = ColumnDataSource(df_v_proj)
+                palette = diverging_palette(Blues256, Reds256, 256)
+                color_mapper = LinearColorMapper(
+                    palette=palette,
+                    low=float(pc_values.min()),
+                    high=float(pc_values.max()),
+                )
+                pc_scatter = p_component_y.scatter(
+                    x="X (A --> P)",
+                    y="Y (D --> V)",
+                    source=source,
+                    size=marker_size,
+                    color={"field": component_col, "transform": color_mapper},
+                    alpha=0.7,
+                )
+                color_bar = ColorBar(color_mapper=color_mapper, width=8)
+                p_component_y.add_layout(color_bar, "right")
+                source.selected.on_change(
+                    "indices", partial(self.update_ephys_roi_id, source.data)
+                )
+                hovertool = HoverTool(
+                    tooltips=self.create_tooltips(),
+                    renderers=[pc_scatter],
+                )
+                p_component_y.add_tools(hovertool)
+            p_component_y.toolbar.active_scroll = p_component_y.select_one(
+                WheelZoomTool
+            )
+            p_component_y.y_range.flipped = True
 
         # Add vertical lines for normalization windows
         p_vm.add_layout(
@@ -863,13 +906,14 @@ class RawSpikeAnalysis:
         self._sync_renderer_visibility(legend_groups)
 
         layout = gridplot(
-            [[p_embedding, p_vm], [p_phase_norm, p_dvdt], [p_phase, None]],
+            [[p_embedding, p_component_y], [p_vm, p_dvdt], [p_phase_norm, p_phase]],
             toolbar_location="right",
             merge_tools=False,
         )
 
         self._latest_figures = {
             "embedding": p_embedding,
+            "component_y": p_component_y,
             "vm": p_vm,
             "dvdt": p_dvdt,
             "phase_norm": p_phase_norm,
@@ -917,6 +961,13 @@ class RawSpikeAnalysis:
             tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
             **plot_settings,
         )
+        component_y = figure(
+            title=f"{dim_reduction_method}1 in X/Y space",
+            x_axis_label="X (A --> P)",
+            y_axis_label="Y (D --> V)",
+            tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
+            **plot_settings,
+        )
         vm = figure(
             title=f"Raw Vm, normalized between {normalize_window_v[0]} to {normalize_window_v[1]} ms",
             x_axis_label="Time (ms)",
@@ -950,11 +1001,35 @@ class RawSpikeAnalysis:
 
         return {
             "embedding": embedding,
+            "component_y": component_y,
             "vm": vm,
             "dvdt": dvdt,
             "phase_norm": phase_norm,
             "phase": phase,
         }
+
+    @staticmethod
+    def _add_lc_mesh_overlay(fig):
+        try:
+            mesh = load_mesh_from_s3()
+            lc_mesh_bokeh = trimesh_to_bokeh_data(mesh, direction="sagittal")
+            mesh_source = ColumnDataSource(lc_mesh_bokeh)
+            fig.patches(
+                source=mesh_source,
+                xs="xs",
+                ys="ys",
+                fill_alpha=0.3,
+                line_color=None,
+                fill_color="lightgray",
+                level="underlay",
+                nonselection_fill_alpha=0.3,
+                nonselection_line_alpha=0,
+                selection_fill_alpha=0.3,
+                selection_line_alpha=0,
+                muted_alpha=0.3,
+            )
+        except Exception:
+            return
 
     @staticmethod
     def _style_subplots(figures, font_size):
