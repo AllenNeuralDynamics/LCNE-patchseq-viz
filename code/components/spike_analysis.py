@@ -18,7 +18,7 @@ from bokeh.models import (
     Span,
     WheelZoomTool,
 )
-from bokeh.palettes import Blues256, Reds256, diverging_palette
+from bokeh.palettes import Blues256, Inferno256, Reds256, diverging_palette
 from bokeh.plotting import figure
 from scipy.stats import multivariate_normal
 from sklearn.cluster import KMeans
@@ -467,10 +467,14 @@ class RawSpikeAnalysis:
             plot_settings,
         )
         p_embedding = plots["embedding"]
+        p_embedding_depth = plots["embedding_depth"]
         p_component_y = plots["component_y"]
         p_vm = plots["vm"]
+        p_vm_depth = plots["vm_depth"]
         p_dvdt = plots["dvdt"]
+        p_dvdt_depth = plots["dvdt_depth"]
         p_phase_norm = plots["phase_norm"]
+        p_phase_norm_depth = plots["phase_norm_depth"]
         p_phase = plots["phase"]
 
         self._style_subplots(plots.values(), font_size)
@@ -840,6 +844,155 @@ class RawSpikeAnalysis:
                 )
                 register_renderer(legend_label, renderer)
 
+        depth_values = pd.to_numeric(df_v_proj["Y (D --> V)"], errors="coerce")
+        if depth_values.notna().any():
+            depth_mapper = LinearColorMapper(
+                palette=list(reversed(Inferno256)),
+                low=float(depth_values.min()),
+                high=float(depth_values.max()),
+            )
+            valid_mask = depth_values.notna()
+            depth_source = ColumnDataSource(df_v_proj.loc[valid_mask])
+            depth_scatter = p_embedding_depth.scatter(
+                x=f"{dim_reduction_method}1",
+                y=f"{dim_reduction_method}2",
+                source=depth_source,
+                size=marker_size,
+                color={"field": "Y (D --> V)", "transform": depth_mapper},
+                line_color="black",
+                line_width=0.3,
+                alpha=0.8,
+            )
+            color_bar = ColorBar(color_mapper=depth_mapper, width=8)
+            p_embedding_depth.add_layout(color_bar, "right")
+            depth_source.selected.on_change(
+                "indices", partial(self.update_ephys_roi_id, depth_source.data)
+            )
+            depth_hover = HoverTool(
+                tooltips=self.create_tooltips(),
+                renderers=[depth_scatter],
+            )
+            p_embedding_depth.add_tools(depth_hover)
+
+            missing_mask = ~valid_mask
+            if missing_mask.any():
+                missing_source = ColumnDataSource(df_v_proj.loc[missing_mask])
+                missing_scatter = p_embedding_depth.scatter(
+                    x=f"{dim_reduction_method}1",
+                    y=f"{dim_reduction_method}2",
+                    source=missing_source,
+                    size=marker_size,
+                    color="gray",
+                    line_color="black",
+                    line_width=0.3,
+                    alpha=0.7,
+                    legend_label="Depth missing",
+                )
+                missing_source.selected.on_change(
+                    "indices", partial(self.update_ephys_roi_id, missing_source.data)
+                )
+                missing_hover = HoverTool(
+                    tooltips=self.create_tooltips(),
+                    renderers=[missing_scatter],
+                )
+                p_embedding_depth.add_tools(missing_hover)
+
+            depth_map = df_v_proj.set_index("ephys_roi_id")["Y (D --> V)"]
+            roi_ids = df_v_norm.index.tolist()
+            depth_series = depth_map.reindex(roi_ids)
+
+            if not depth_series.isna().all():
+                depth_line_props = {
+                    "hover_line_color": "blue",
+                    "hover_line_alpha": 1.0,
+                    "hover_line_width": 4,
+                    "selection_line_color": "blue",
+                    "selection_line_alpha": 1.0,
+                    "selection_line_width": 4,
+                }
+                missing_ids = depth_series[depth_series.isna()].index.tolist()
+                valid_ids = depth_series[depth_series.notna()].index.tolist()
+                vm_source = ColumnDataSource(
+                    {
+                        "xs": [df_v_norm.columns.values] * len(valid_ids),
+                        "ys": df_v_norm.loc[valid_ids].values.tolist(),
+                        "depth": depth_series.loc[valid_ids].tolist(),
+                        "ephys_roi_id": valid_ids,
+                    }
+                )
+                p_vm_depth.multi_line(
+                    source=vm_source,
+                    xs="xs",
+                    ys="ys",
+                    line_color={"field": "depth", "transform": depth_mapper},
+                    alpha=0.8,
+                    **depth_line_props,
+                )
+                if missing_ids:
+                    df_v_missing = df_v_norm.loc[missing_ids]
+                    p_vm_depth.multi_line(
+                        xs=[df_v_missing.columns.values] * len(df_v_missing),
+                        ys=df_v_missing.values.tolist(),
+                        line_color="gray",
+                        alpha=0.6,
+                        legend_label="Depth missing",
+                        **depth_line_props,
+                    )
+                dvdt_source = ColumnDataSource(
+                    {
+                        "xs": [df_dvdt_norm.columns.values] * len(valid_ids),
+                        "ys": df_dvdt_norm.loc[valid_ids].values.tolist(),
+                        "depth": depth_series.loc[valid_ids].tolist(),
+                        "ephys_roi_id": valid_ids,
+                    }
+                )
+                p_dvdt_depth.multi_line(
+                    source=dvdt_source,
+                    xs="xs",
+                    ys="ys",
+                    line_color={"field": "depth", "transform": depth_mapper},
+                    alpha=0.8,
+                    **depth_line_props,
+                )
+                if missing_ids:
+                    df_dvdt_missing = df_dvdt_norm.loc[missing_ids]
+                    p_dvdt_depth.multi_line(
+                        xs=[df_dvdt_missing.columns.values] * len(df_dvdt_missing),
+                        ys=df_dvdt_missing.values.tolist(),
+                        line_color="gray",
+                        alpha=0.6,
+                        legend_label="Depth missing",
+                        **depth_line_props,
+                    )
+
+                phase_source = ColumnDataSource(
+                    {
+                        "xs": phase_norm_v.reindex(valid_ids).values.tolist(),
+                        "ys": phase_norm_dvdt.reindex(valid_ids).values.tolist(),
+                        "depth": depth_series.loc[valid_ids].tolist(),
+                        "ephys_roi_id": valid_ids,
+                    }
+                )
+                p_phase_norm_depth.multi_line(
+                    source=phase_source,
+                    xs="xs",
+                    ys="ys",
+                    line_color={"field": "depth", "transform": depth_mapper},
+                    alpha=0.8,
+                    **depth_line_props,
+                )
+                if missing_ids:
+                    df_v_phase_missing = phase_norm_v.loc[missing_ids]
+                    df_dvdt_phase_missing = phase_norm_dvdt.loc[missing_ids]
+                    p_phase_norm_depth.multi_line(
+                        xs=df_v_phase_missing.values.tolist(),
+                        ys=df_dvdt_phase_missing.values.tolist(),
+                        line_color="gray",
+                        alpha=0.6,
+                        legend_label="Depth missing",
+                        **depth_line_props,
+                    )
+
         # Add tooltips
         # Add renderers like this to solve bug like this:
         #   File "/Users/han.hou/miniconda3/envs/patch-seq/lib/python3.10/
@@ -859,12 +1012,15 @@ class RawSpikeAnalysis:
         )
         p_vm.add_tools(hovertool)
         p_dvdt.add_tools(hovertool)
+        p_vm_depth.add_tools(hovertool)
+        p_dvdt_depth.add_tools(hovertool)
 
         hovertool = HoverTool(
             tooltips=[("ephys_roi_id", "@ephys_roi_id")],
             attachment="right",
         )
         p_phase_norm.add_tools(hovertool)
+        p_phase_norm_depth.add_tools(hovertool)
 
         hovertool = HoverTool(
             tooltips=[("ephys_roi_id", "@ephys_roi_id")],
@@ -882,13 +1038,43 @@ class RawSpikeAnalysis:
         p_phase_norm.toolbar.active_drag = box_zoom_x
 
         legend_configs = {
+            p_embedding_depth: {
+                "location": "top_left",
+                "orientation": "vertical",
+                "ncols": 1,
+            },
             p_vm: {"location": "top_right", "orientation": "vertical", "ncols": 1},
+            p_vm_depth: {
+                "location": "top_right",
+                "orientation": "vertical",
+                "ncols": 1,
+            },
             p_dvdt: {"location": "top_right", "orientation": "vertical", "ncols": 1},
+            p_dvdt_depth: {
+                "location": "top_right",
+                "orientation": "vertical",
+                "ncols": 1,
+            },
             p_phase: {"location": "top_left", "orientation": "vertical", "ncols": 1},
+            p_phase_norm_depth: {
+                "location": "top_left",
+                "orientation": "vertical",
+                "ncols": 1,
+            },
         }
         legend_font_size = max(font_size - 6, 8)
 
-        for p in [p_embedding, p_vm, p_dvdt, p_phase_norm, p_phase]:
+        for p in [
+            p_embedding,
+            p_embedding_depth,
+            p_vm,
+            p_vm_depth,
+            p_dvdt,
+            p_dvdt_depth,
+            p_phase_norm,
+            p_phase_norm_depth,
+            p_phase,
+        ]:
             if not p.legend:
                 continue
             config = legend_configs.get(p)
@@ -908,17 +1094,27 @@ class RawSpikeAnalysis:
         self._sync_renderer_visibility(legend_groups)
 
         layout = gridplot(
-            [[p_embedding, p_component_y], [p_vm, p_dvdt], [p_phase_norm, p_phase]],
+            [
+                [p_embedding, p_component_y],
+                [p_vm, p_dvdt],
+                [p_phase_norm, p_phase],
+                [p_embedding_depth, p_vm_depth],
+                [p_dvdt_depth, p_phase_norm_depth],
+            ],
             toolbar_location="right",
             merge_tools=False,
         )
 
         self._latest_figures = {
             "embedding": p_embedding,
+            "embedding_depth": p_embedding_depth,
             "component_y": p_component_y,
             "vm": p_vm,
+            "vm_depth": p_vm_depth,
             "dvdt": p_dvdt,
+            "dvdt_depth": p_dvdt_depth,
             "phase_norm": p_phase_norm,
+            "phase_norm_depth": p_phase_norm_depth,
             "phase": p_phase,
         }
 
@@ -963,6 +1159,13 @@ class RawSpikeAnalysis:
             tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
             **plot_settings,
         )
+        embedding_depth = figure(
+            title="PCA colored by depth",
+            x_axis_label=f"{dim_reduction_method}1",
+            y_axis_label=f"{dim_reduction_method}2",
+            tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
+            **plot_settings,
+        )
         component_y = figure(
             title=f"{dim_reduction_method}1 in X/Y space",
             x_axis_label="X (A --> P)",
@@ -978,6 +1181,14 @@ class RawSpikeAnalysis:
             tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
             **plot_settings,
         )
+        vm_depth = figure(
+            title="Raw Vm (depth colored)",
+            x_axis_label="Time (ms)",
+            y_axis_label="V",
+            x_range=(spike_range[0] - 0.1, spike_range[1] + 0.1),
+            tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
+            **plot_settings,
+        )
         dvdt = figure(
             title=f"dV/dt, normalized betwen {normalize_window_dvdt[0]} to {normalize_window_dvdt[1]} ms",
             x_axis_label="Time (ms)",
@@ -986,8 +1197,23 @@ class RawSpikeAnalysis:
             tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
             **plot_settings,
         )
+        dvdt_depth = figure(
+            title="dV/dt (depth colored)",
+            x_axis_label="Time (ms)",
+            y_axis_label="dV/dt",
+            x_range=(spike_range[0] - 0.1, spike_range[1] + 0.1),
+            tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
+            **plot_settings,
+        )
         phase_norm = figure(
             title="Phase Plot (Normalized)",
+            x_axis_label="V (normalized)",
+            y_axis_label="dV/dt (normalized)",
+            tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
+            **plot_settings,
+        )
+        phase_norm_depth = figure(
+            title="Phase Plot (depth colored)",
             x_axis_label="V (normalized)",
             y_axis_label="dV/dt (normalized)",
             tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
@@ -1003,10 +1229,14 @@ class RawSpikeAnalysis:
 
         return {
             "embedding": embedding,
+            "embedding_depth": embedding_depth,
             "component_y": component_y,
             "vm": vm,
+            "vm_depth": vm_depth,
             "dvdt": dvdt,
+            "dvdt_depth": dvdt_depth,
             "phase_norm": phase_norm,
+            "phase_norm_depth": phase_norm_depth,
             "phase": phase,
         }
 
