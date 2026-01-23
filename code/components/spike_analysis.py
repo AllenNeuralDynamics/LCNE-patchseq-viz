@@ -559,6 +559,8 @@ class RawSpikeAnalysis:
                     source=source,
                     size=marker_size,
                     color={"field": component_col, "transform": color_mapper},
+                    line_color="black",
+                    line_width=0.5,
                     alpha=0.7,
                 )
                 color_bar = ColorBar(color_mapper=color_mapper, width=8)
@@ -1018,9 +1020,9 @@ class RawSpikeAnalysis:
                 source=mesh_source,
                 xs="xs",
                 ys="ys",
-                fill_alpha=0.3,
+                fill_alpha=0.25,
                 line_color=None,
-                fill_color="lightgray",
+                fill_color="whitesmoke",
                 level="underlay",
                 nonselection_fill_alpha=0.3,
                 nonselection_line_alpha=0,
