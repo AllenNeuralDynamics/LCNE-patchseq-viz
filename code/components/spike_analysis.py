@@ -7,7 +7,7 @@ from functools import partial
 import numpy as np
 import pandas as pd
 import panel as pn
-from bokeh.layouts import gridplot
+from bokeh.layouts import gridplot, row
 from bokeh.models import (
     BoxZoomTool,
     CategoricalColorMapper,
@@ -491,9 +491,8 @@ class RawSpikeAnalysis:
         p_embedding_depth = plots["embedding_depth"]
         p_component_y = plots["component_y"]
         p_tau_xy = plots["tau_xy"]
-        p_scatter_tau_pc1 = plots["scatter_tau_pc1"]
-        p_marginal_tau = plots["marginal_tau"]
-        p_marginal_pc1 = plots["marginal_pc1"]
+        p_pc1_projection = plots["pc1_projection"]
+        p_tau_projection = plots["tau_projection"]
         p_pc1_histogram = plots["pc1_histogram"]
         p_vm = plots["vm"]
         p_vm_depth = plots["vm_depth"]
@@ -681,98 +680,67 @@ class RawSpikeAnalysis:
             p_tau_xy.toolbar.active_scroll = p_tau_xy.select_one(WheelZoomTool)
             p_tau_xy.y_range.flipped = True
 
-        # --- Scatter: tau vs PCA1, with marginal box plots ---
+        # --- Box plots: PCA1 and tau by projection target ---
         spinal_regions = ["C5", "Spinal cord"]
         cortex_regions = ["Cortex", "PL", "PL, MOs"]
 
         def _fmt_pval(p):
             return f"p={p:.2e}" if p < 0.001 else f"p={p:.3f}"
 
+        # PCA1 box plot
+        pc1_groups = []
+        for grp_label, region_set, color in [
+            ("Spinal cord", spinal_regions, REGION_COLOR_MAPPER["Spinal cord"]),
+            ("Cortex", cortex_regions, REGION_COLOR_MAPPER["Cortex"]),
+        ]:
+            mask = df_v_proj["injection region"].isin(region_set)
+            sub = df_v_proj.loc[mask]
+            vals = pd.to_numeric(sub[component_col], errors="coerce").dropna().values
+            if len(vals) > 0:
+                pc1_groups.append((grp_label, vals, color))
+
+        if len(pc1_groups) == 2:
+            self._add_box_strip_plot(
+                p_pc1_projection, pc1_groups, marker_size, alpha
+            )
+            _, pc1_mw = mannwhitneyu(
+                pc1_groups[0][1], pc1_groups[1][1], alternative="two-sided"
+            )
+            _, pc1_tt = ttest_ind(
+                pc1_groups[0][1], pc1_groups[1][1], equal_var=False
+            )
+            p_pc1_projection.title.text = (
+                f"{component_col} (on normalized V)\n"
+                f"rank-sum {_fmt_pval(pc1_mw)}\nt-test {_fmt_pval(pc1_tt)}"
+            )
+
+        # Tau box plot
         if self._tau_col and self._tau_col in df_v_proj.columns:
-            # Build per-group data for scatter and marginals
-            pc1_groups = []
             tau_groups = []
             for grp_label, region_set, color in [
                 ("Spinal cord", spinal_regions, REGION_COLOR_MAPPER["Spinal cord"]),
                 ("Cortex", cortex_regions, REGION_COLOR_MAPPER["Cortex"]),
             ]:
                 mask = df_v_proj["injection region"].isin(region_set)
-                sub = df_v_proj.loc[mask].copy()
-                sub[self._tau_col] = pd.to_numeric(
-                    sub[self._tau_col], errors="coerce"
-                )
-                sub[component_col] = pd.to_numeric(
-                    sub[component_col], errors="coerce"
-                )
-                valid = sub.dropna(subset=[self._tau_col, component_col])
-                if len(valid) == 0:
-                    continue
+                sub = df_v_proj.loc[mask]
+                vals = pd.to_numeric(sub[self._tau_col], errors="coerce").dropna().values
+                if len(vals) > 0:
+                    tau_groups.append((grp_label, vals, color))
 
-                # Scatter on main plot
-                source = ColumnDataSource(valid)
-                p_scatter_tau_pc1.scatter(
-                    x=self._tau_col,
-                    y=component_col,
-                    source=source,
-                    size=marker_size,
-                    color=color,
-                    alpha=0.6,
-                    line_color="black",
-                    line_width=0.5,
-                    legend_label=f"{grp_label} (n={len(valid)})",
-                )
-                source.selected.on_change(
-                    "indices", partial(self.update_ephys_roi_id, source.data)
-                )
-
-                pc1_vals = valid[component_col].values
-                tau_vals = valid[self._tau_col].values
-                pc1_groups.append((grp_label, pc1_vals, color))
-                tau_groups.append((grp_label, tau_vals, color))
-
-            # Marginal box plots
             if len(tau_groups) == 2:
                 self._add_box_strip_plot(
-                    p_marginal_tau, tau_groups, marker_size, alpha,
-                    horizontal=True,
+                    p_tau_projection, tau_groups, marker_size, alpha
                 )
-                self._add_box_strip_plot(
-                    p_marginal_pc1, pc1_groups, marker_size, alpha,
-                    horizontal=False,
-                )
-
-                # Stats for tau (top marginal title)
                 _, tau_mw = mannwhitneyu(
                     tau_groups[0][1], tau_groups[1][1], alternative="two-sided"
                 )
                 _, tau_tt = ttest_ind(
                     tau_groups[0][1], tau_groups[1][1], equal_var=False
                 )
-                p_marginal_tau.title.text = (
-                    f"tau: rank-sum {_fmt_pval(tau_mw)}, "
-                    f"t-test {_fmt_pval(tau_tt)}"
+                p_tau_projection.title.text = (
+                    f"ipfx_tau\n"
+                    f"rank-sum {_fmt_pval(tau_mw)}\nt-test {_fmt_pval(tau_tt)}"
                 )
-
-                # Stats for PCA1 (right marginal title)
-                _, pc1_mw = mannwhitneyu(
-                    pc1_groups[0][1], pc1_groups[1][1], alternative="two-sided"
-                )
-                _, pc1_tt = ttest_ind(
-                    pc1_groups[0][1], pc1_groups[1][1], equal_var=False
-                )
-                p_marginal_pc1.title.text = (
-                    f"PCA1: rank-sum {_fmt_pval(pc1_mw)}, "
-                    f"t-test {_fmt_pval(pc1_tt)}"
-                )
-
-            p_scatter_tau_pc1.legend.click_policy = "hide"
-            hovertool = HoverTool(
-                tooltips=self.create_tooltips(),
-            )
-            p_scatter_tau_pc1.add_tools(hovertool)
-            p_scatter_tau_pc1.toolbar.active_scroll = (
-                p_scatter_tau_pc1.select_one(WheelZoomTool)
-            )
 
         # Add vertical lines for normalization windows
         p_vm.add_layout(
@@ -1230,11 +1198,6 @@ class RawSpikeAnalysis:
         p_phase_norm.toolbar.active_drag = box_zoom_x
 
         legend_configs = {
-            p_scatter_tau_pc1: {
-                "location": "top_left",
-                "orientation": "vertical",
-                "ncols": 1,
-            },
             p_embedding_depth: {
                 "location": "top_left",
                 "orientation": "vertical",
@@ -1264,7 +1227,6 @@ class RawSpikeAnalysis:
         for p in [
             p_embedding,
             p_embedding_depth,
-            p_scatter_tau_pc1,
             p_vm,
             p_vm_depth,
             p_dvdt,
@@ -1291,16 +1253,10 @@ class RawSpikeAnalysis:
         # Create grid layout with independent axes - now 3 rows x 2 columns
         self._sync_renderer_visibility(legend_groups)
 
-        scatter_composite = gridplot(
-            [
-                [p_marginal_tau, None],
-                [p_scatter_tau_pc1, p_marginal_pc1],
-            ],
-            merge_tools=True,
-        )
+        box_composite = row(p_pc1_projection, p_tau_projection)
         layout = gridplot(
             [
-                [p_embedding, scatter_composite, p_component_y, p_tau_xy],
+                [p_embedding, box_composite, p_component_y, p_tau_xy],
                 [p_vm, p_dvdt],
                 [p_phase_norm, p_phase],
                 [p_embedding_depth, p_vm_depth],
@@ -1315,9 +1271,8 @@ class RawSpikeAnalysis:
             "embedding_depth": p_embedding_depth,
             "component_y": p_component_y,
             "tau_xy": p_tau_xy,
-            "scatter_tau_pc1": p_scatter_tau_pc1,
-            "marginal_tau": p_marginal_tau,
-            "marginal_pc1": p_marginal_pc1,
+            "pc1_projection": p_pc1_projection,
+            "tau_projection": p_tau_projection,
             "pc1_histogram": p_pc1_histogram,
             "vm": p_vm,
             "vm_depth": p_vm_depth,
@@ -1530,35 +1485,24 @@ class RawSpikeAnalysis:
             tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
             **plot_settings,
         )
-        # Scatter plot: tau vs PCA1 with marginal box plots
-        marginal_h = max(int(plot_settings["height"] * 0.3), 120)
-        marginal_w = max(int(plot_settings["width"] * 0.15), 80)
-        scatter_tau_pc1 = figure(
-            x_axis_label="ipfx_tau",
+        # Box plots: PCA1 and tau by projection target
+        box_w = 250
+        pc1_projection = figure(
+            title=f"{dim_reduction_method}1 (on normalized V) by projection target",
             y_axis_label=f"{dim_reduction_method}1",
-            tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
-            **plot_settings,
-        )
-        marginal_tau = figure(
-            title="tau vs PCA1 by projection target",
-            x_range=scatter_tau_pc1.x_range,
-            width=plot_settings["width"],
-            height=marginal_h,
             tools="",
             toolbar_location=None,
-        )
-        marginal_tau.xaxis.visible = False
-        marginal_tau.yaxis.visible = False
-        marginal_pc1 = figure(
-            y_range=scatter_tau_pc1.y_range,
-            width=marginal_w,
+            width=box_w,
             height=plot_settings["height"],
+        )
+        tau_projection = figure(
+            title="ipfx_tau by projection target",
+            y_axis_label="ipfx_tau",
             tools="",
             toolbar_location=None,
-            min_border_right=40,
+            width=box_w,
+            height=plot_settings["height"],
         )
-        marginal_pc1.yaxis.visible = False
-        marginal_pc1.xaxis.visible = False
         pc1_histogram = figure(
             title=f"{dim_reduction_method}1 Distribution",
             x_axis_label=f"{dim_reduction_method}1",
@@ -1573,9 +1517,8 @@ class RawSpikeAnalysis:
             "embedding_depth": embedding_depth,
             "component_y": component_y,
             "tau_xy": tau_xy,
-            "scatter_tau_pc1": scatter_tau_pc1,
-            "marginal_tau": marginal_tau,
-            "marginal_pc1": marginal_pc1,
+            "pc1_projection": pc1_projection,
+            "tau_projection": tau_projection,
             "pc1_histogram": pc1_histogram,
             "vm": vm,
             "vm_depth": vm_depth,
