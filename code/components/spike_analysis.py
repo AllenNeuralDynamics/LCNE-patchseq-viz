@@ -7,9 +7,10 @@ from functools import partial
 import numpy as np
 import pandas as pd
 import panel as pn
-from bokeh.layouts import gridplot
+from bokeh.layouts import gridplot, row
 from bokeh.models import (
     BoxZoomTool,
+    CategoricalColorMapper,
     ColorBar,
     ColumnDataSource,
     CustomJS,
@@ -20,7 +21,7 @@ from bokeh.models import (
 )
 from bokeh.palettes import Blues256, Inferno256, Reds256, diverging_palette
 from bokeh.plotting import figure
-from scipy.stats import multivariate_normal
+from scipy.stats import mannwhitneyu, multivariate_normal, ttest_ind
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score
@@ -44,6 +45,8 @@ class RawSpikeAnalysis:
         self.main_app = main_app
         self.df_meta = df_meta
         self._latest_figures = {}
+        tau_cols = [c for c in df_meta.columns if "ipfx_tau" in c]
+        self._tau_col = tau_cols[0] if tau_cols else None
 
         # Load extracted raw spike data
         self.spike_cache = {}
@@ -113,6 +116,11 @@ class RawSpikeAnalysis:
                 value=False,
                 sizing_mode="stretch_width",
             ),
+            "if_edge_color_projection": pn.widgets.Checkbox(
+                name="Edge color by projection target",
+                value=True,
+                sizing_mode="stretch_width",
+            ),
             "marker_size": pn.widgets.IntSlider(
                 name="Marker Size",
                 start=5,
@@ -149,7 +157,7 @@ class RawSpikeAnalysis:
                 name="Font Size",
                 start=8,
                 end=24,
-                value=12,
+                value=10,
                 step=1,
                 sizing_mode="stretch_width",
             ),
@@ -208,18 +216,22 @@ class RawSpikeAnalysis:
             [col for col in self.df_meta.columns if col != "cluster_id"]
         ].merge(clusters_df, on="ephys_roi_id", how="left")
         df_v_proj = df_v_proj.merge(clusters_df, on="ephys_roi_id", how="left")
+        merge_cols = [
+            "Date_str",
+            "ephys_roi_id",
+            "injection region",
+            "cell_summary_url",
+            "jem-id_cell_specimen",
+            "X (A --> P)",
+            "Y (D --> V)",
+        ]
+        # Include ipfx_tau column if available
+        tau_cols = [c for c in self.df_meta.columns if "ipfx_tau" in c]
+        merge_cols.extend(tau_cols)
+        self._tau_col = tau_cols[0] if tau_cols else None
+
         df_v_proj = df_v_proj.merge(
-            self.df_meta[
-                [
-                    "Date_str",
-                    "ephys_roi_id",
-                    "injection region",
-                    "cell_summary_url",
-                    "jem-id_cell_specimen",
-                    "X (A --> P)",
-                    "Y (D --> V)",
-                ]
-            ],
+            self.df_meta[merge_cols],
             on="ephys_roi_id",
             how="left",
         )
@@ -231,14 +243,22 @@ class RawSpikeAnalysis:
     ):
         """Create tooltips for the hover tool."""
 
-        tooltips = """
+        tau_line = ""
+        if self._tau_col:
+            tau_field = self._tau_col.replace("{", "{{").replace("}", "}}")
+            tau_line = f"""
+                    <span style="font-size: 15px;">
+                        tau = @{{{tau_field}}}{{0.000}}
+                    </span><br>"""
+
+        tooltips = f"""
              <div style="text-align: left; flex: auto; white-space: nowrap; margin: 0 10px;
                        border: 2px solid black; padding: 10px;">
                     <span style="font-size: 17px;">
-                        <b>@Date_str, @{injection region}, @{ephys_roi_id},
-                            @{jem-id_cell_specimen}</b><br>
-                    </span>
-                    <img src="@cell_summary_url{safe}" alt="Cell Summary"
+                        <b>@Date_str, @{{injection region}}, @{{ephys_roi_id}},
+                            @{{jem-id_cell_specimen}}</b><br>
+                    </span>{tau_line}
+                    <img src="@cell_summary_url{{safe}}" alt="Cell Summary"
                          style="width: 800px; height: auto;">
              </div>
              """
@@ -269,6 +289,7 @@ class RawSpikeAnalysis:
         font_size: int = 12,
         marker_size: int = 10,
         if_show_cluster_on_retro: bool = True,
+        if_edge_color_projection: bool = True,
         spike_range: tuple = (-4, 7),
         dim_reduction_method: str = "PCA",
         normalize_window_v: tuple = (-2, 4),
@@ -469,6 +490,10 @@ class RawSpikeAnalysis:
         p_embedding = plots["embedding"]
         p_embedding_depth = plots["embedding_depth"]
         p_component_y = plots["component_y"]
+        p_tau_xy = plots["tau_xy"]
+        p_pc1_projection = plots["pc1_projection"]
+        p_tau_projection = plots["tau_projection"]
+        p_pc1_histogram = plots["pc1_histogram"]
         p_vm = plots["vm"]
         p_vm_depth = plots["vm_depth"]
         p_dvdt = plots["dvdt"]
@@ -540,7 +565,7 @@ class RawSpikeAnalysis:
 
         # Add metrics to the plot
         p_embedding.title.text = (
-            f"{dim_reduction_method} + K-means Clustering (n_clusters = {n_clusters})\n"
+            f"{dim_reduction_method}\nK-means Clustering (n_clusters = {n_clusters})\n"
             f"Silhouette Score: {metrics['silhouette_avg']:.3f}\n"
         )
         p_embedding.toolbar.active_scroll = p_embedding.select_one(WheelZoomTool)
@@ -550,6 +575,24 @@ class RawSpikeAnalysis:
             self._add_lc_mesh_overlay(p_component_y)
             pc_values = pd.to_numeric(df_v_proj[component_col], errors="coerce")
             if pc_values.notna().any():
+                # Optionally map edge color to projection target
+                if if_edge_color_projection:
+                    regions = df_v_proj["injection region"].unique().tolist()
+                    edge_color_mapper = CategoricalColorMapper(
+                        factors=regions,
+                        palette=[
+                            REGION_COLOR_MAPPER.get(r, "black") for r in regions
+                        ],
+                    )
+                    line_color_spec = {
+                        "field": "injection region",
+                        "transform": edge_color_mapper,
+                    }
+                    line_width_spec = 1.5
+                else:
+                    line_color_spec = "black"
+                    line_width_spec = 0.5
+
                 source = ColumnDataSource(df_v_proj)
                 palette = diverging_palette(Blues256, Reds256, 256)
                 color_mapper = LinearColorMapper(
@@ -563,8 +606,8 @@ class RawSpikeAnalysis:
                     source=source,
                     size=marker_size,
                     color={"field": component_col, "transform": color_mapper},
-                    line_color="black",
-                    line_width=0.5,
+                    line_color=line_color_spec,
+                    line_width=line_width_spec,
                     alpha=0.7,
                 )
                 color_bar = ColorBar(color_mapper=color_mapper, width=8)
@@ -581,6 +624,123 @@ class RawSpikeAnalysis:
                 WheelZoomTool
             )
             p_component_y.y_range.flipped = True
+
+        # --- Tau in X/Y space ---
+        tau_cols = [c for c in df_v_proj.columns if "ipfx_tau" in c]
+        if tau_cols:
+            tau_col = tau_cols[0]
+            self._add_lc_mesh_overlay(p_tau_xy)
+            tau_values = pd.to_numeric(df_v_proj[tau_col], errors="coerce")
+            if tau_values.notna().any():
+                df_tau_valid = df_v_proj[tau_values.notna()]
+                tau_source = ColumnDataSource(df_tau_valid)
+                valid_tau = tau_values.dropna()
+                tau_mapper = LinearColorMapper(
+                    palette=list(Inferno256),
+                    low=float(valid_tau.min()),
+                    high=float(valid_tau.max()),
+                )
+                if if_edge_color_projection:
+                    regions = df_v_proj["injection region"].unique().tolist()
+                    tau_edge_mapper = CategoricalColorMapper(
+                        factors=regions,
+                        palette=[
+                            REGION_COLOR_MAPPER.get(r, "black") for r in regions
+                        ],
+                    )
+                    tau_line_color = {
+                        "field": "injection region",
+                        "transform": tau_edge_mapper,
+                    }
+                    tau_line_width = 1.5
+                else:
+                    tau_line_color = "black"
+                    tau_line_width = 0.5
+                tau_scatter = p_tau_xy.scatter(
+                    x="X (A --> P)",
+                    y="Y (D --> V)",
+                    source=tau_source,
+                    size=marker_size,
+                    color={"field": tau_col, "transform": tau_mapper},
+                    line_color=tau_line_color,
+                    line_width=tau_line_width,
+                    alpha=0.7,
+                )
+                tau_color_bar = ColorBar(color_mapper=tau_mapper, width=8)
+                p_tau_xy.add_layout(tau_color_bar, "right")
+                tau_source.selected.on_change(
+                    "indices", partial(self.update_ephys_roi_id, tau_source.data)
+                )
+                tau_hover = HoverTool(
+                    tooltips=self.create_tooltips(),
+                    renderers=[tau_scatter],
+                )
+                p_tau_xy.add_tools(tau_hover)
+                p_tau_xy.title.text = f"{tau_col} in X/Y space"
+            p_tau_xy.toolbar.active_scroll = p_tau_xy.select_one(WheelZoomTool)
+            p_tau_xy.y_range.flipped = True
+
+        # --- Box plots: PCA1 and tau by projection target ---
+        spinal_regions = ["C5", "Spinal cord"]
+        cortex_regions = ["Cortex", "PL", "PL, MOs"]
+
+        def _fmt_pval(p):
+            return f"p={p:.2e}" if p < 0.001 else f"p={p:.3f}"
+
+        # PCA1 box plot
+        pc1_groups = []
+        for grp_label, region_set, color in [
+            ("Spinal cord", spinal_regions, REGION_COLOR_MAPPER["Spinal cord"]),
+            ("Cortex", cortex_regions, REGION_COLOR_MAPPER["Cortex"]),
+        ]:
+            mask = df_v_proj["injection region"].isin(region_set)
+            sub = df_v_proj.loc[mask]
+            vals = pd.to_numeric(sub[component_col], errors="coerce").dropna().values
+            if len(vals) > 0:
+                pc1_groups.append((grp_label, vals, color))
+
+        if len(pc1_groups) == 2:
+            self._add_box_strip_plot(
+                p_pc1_projection, pc1_groups, marker_size, alpha
+            )
+            _, pc1_mw = mannwhitneyu(
+                pc1_groups[0][1], pc1_groups[1][1], alternative="two-sided"
+            )
+            _, pc1_tt = ttest_ind(
+                pc1_groups[0][1], pc1_groups[1][1], equal_var=False
+            )
+            p_pc1_projection.title.text = (
+                f"{component_col} (on normalized V)\n"
+                f"rank-sum {_fmt_pval(pc1_mw)}\nt-test {_fmt_pval(pc1_tt)}"
+            )
+
+        # Tau box plot
+        if self._tau_col and self._tau_col in df_v_proj.columns:
+            tau_groups = []
+            for grp_label, region_set, color in [
+                ("Spinal cord", spinal_regions, REGION_COLOR_MAPPER["Spinal cord"]),
+                ("Cortex", cortex_regions, REGION_COLOR_MAPPER["Cortex"]),
+            ]:
+                mask = df_v_proj["injection region"].isin(region_set)
+                sub = df_v_proj.loc[mask]
+                vals = pd.to_numeric(sub[self._tau_col], errors="coerce").dropna().values
+                if len(vals) > 0:
+                    tau_groups.append((grp_label, vals, color))
+
+            if len(tau_groups) == 2:
+                self._add_box_strip_plot(
+                    p_tau_projection, tau_groups, marker_size, alpha
+                )
+                _, tau_mw = mannwhitneyu(
+                    tau_groups[0][1], tau_groups[1][1], alternative="two-sided"
+                )
+                _, tau_tt = ttest_ind(
+                    tau_groups[0][1], tau_groups[1][1], equal_var=False
+                )
+                p_tau_projection.title.text = (
+                    f"ipfx_tau\n"
+                    f"rank-sum {_fmt_pval(tau_mw)}\nt-test {_fmt_pval(tau_tt)}"
+                )
 
         # Add vertical lines for normalization windows
         p_vm.add_layout(
@@ -743,7 +903,7 @@ class RawSpikeAnalysis:
         for region in self.df_meta["injection region"].unique():
             if region == "Non-Retro":
                 continue
-            roi_ids = self.df_meta.query(
+            roi_ids = df_v_proj.query(
                 "`injection region` == @region"
             ).ephys_roi_id.tolist()
             legend_label = f"{region}, n={len(roi_ids)}"
@@ -1093,9 +1253,10 @@ class RawSpikeAnalysis:
         # Create grid layout with independent axes - now 3 rows x 2 columns
         self._sync_renderer_visibility(legend_groups)
 
+        box_composite = row(p_pc1_projection, p_tau_projection)
         layout = gridplot(
             [
-                [p_embedding, p_component_y],
+                [p_embedding, box_composite, p_component_y, p_tau_xy],
                 [p_vm, p_dvdt],
                 [p_phase_norm, p_phase],
                 [p_embedding_depth, p_vm_depth],
@@ -1109,6 +1270,10 @@ class RawSpikeAnalysis:
             "embedding": p_embedding,
             "embedding_depth": p_embedding_depth,
             "component_y": p_component_y,
+            "tau_xy": p_tau_xy,
+            "pc1_projection": p_pc1_projection,
+            "tau_projection": p_tau_projection,
+            "pc1_histogram": p_pc1_histogram,
             "vm": p_vm,
             "vm_depth": p_vm_depth,
             "dvdt": p_dvdt,
@@ -1144,6 +1309,91 @@ class RawSpikeAnalysis:
                     CustomJS(args={"targets": others}, code=sync_code),
                 )
 
+    @staticmethod
+    def _add_box_strip_plot(
+        fig, groups, marker_size, alpha, seed=42, horizontal=False
+    ):
+        """Add jittered strip plot with box plot overlay to a figure.
+
+        Parameters:
+            fig: Bokeh figure
+            groups: list of (label, data_array, color) tuples
+            marker_size: scatter marker size
+            alpha: scatter alpha
+            seed: random seed for jitter
+            horizontal: if True, data values on x-axis, groups on y-axis
+        """
+        rng = np.random.default_rng(seed)
+        for idx, (_, data, color) in enumerate(groups):
+            if len(data) == 0:
+                continue
+            jitter = rng.uniform(-0.15, 0.15, len(data))
+            if horizontal:
+                source = ColumnDataSource(
+                    {"x": data, "y": np.full(len(data), idx) + jitter}
+                )
+            else:
+                source = ColumnDataSource(
+                    {"x": np.full(len(data), idx) + jitter, "y": data}
+                )
+            fig.scatter(
+                "x", "y", source=source,
+                size=marker_size, color=color, alpha=alpha,
+                line_color="black", line_width=0.5,
+            )
+            q1, median, q3 = np.percentile(data, [25, 50, 75])
+            iqr = q3 - q1
+            upper = min(q3 + 1.5 * iqr, data.max())
+            lower = max(q1 - 1.5 * iqr, data.min())
+            if horizontal:
+                fig.hbar(
+                    y=[idx], height=0.4, right=[q3], left=[q1],
+                    fill_color=color, fill_alpha=0.3,
+                    line_color="black", line_width=1.5,
+                )
+                fig.segment(x0=[median], x1=[median],
+                            y0=[idx - 0.2], y1=[idx + 0.2],
+                            color="black", line_width=2.5)
+                fig.segment(x0=[lower], x1=[q1], y0=[idx], y1=[idx],
+                            color="black", line_width=1)
+                fig.segment(x0=[q3], x1=[upper], y0=[idx], y1=[idx],
+                            color="black", line_width=1)
+                fig.segment(x0=[lower], x1=[lower],
+                            y0=[idx - 0.1], y1=[idx + 0.1],
+                            color="black", line_width=1)
+                fig.segment(x0=[upper], x1=[upper],
+                            y0=[idx - 0.1], y1=[idx + 0.1],
+                            color="black", line_width=1)
+            else:
+                fig.vbar(
+                    x=[idx], width=0.4, top=[q3], bottom=[q1],
+                    fill_color=color, fill_alpha=0.3,
+                    line_color="black", line_width=1.5,
+                )
+                fig.segment(x0=[idx - 0.2], x1=[idx + 0.2],
+                            y0=[median], y1=[median],
+                            color="black", line_width=2.5)
+                fig.segment(x0=[idx], x1=[idx], y0=[lower], y1=[q1],
+                            color="black", line_width=1)
+                fig.segment(x0=[idx], x1=[idx], y0=[q3], y1=[upper],
+                            color="black", line_width=1)
+                fig.segment(x0=[idx - 0.1], x1=[idx + 0.1],
+                            y0=[lower], y1=[lower],
+                            color="black", line_width=1)
+                fig.segment(x0=[idx - 0.1], x1=[idx + 0.1],
+                            y0=[upper], y1=[upper],
+                            color="black", line_width=1)
+
+        cat_axis = fig.yaxis if horizontal else fig.xaxis
+        cat_range = fig.y_range if horizontal else fig.x_range
+        cat_axis.ticker = list(range(len(groups)))
+        cat_axis.major_label_overrides = {
+            i: f"{label}\n(n={len(data)})"
+            for i, (label, data, _) in enumerate(groups)
+        }
+        cat_range.start = -0.6
+        cat_range.end = len(groups) - 0.4
+
     def _init_spike_subplots(
         self,
         dim_reduction_method,
@@ -1171,6 +1421,15 @@ class RawSpikeAnalysis:
             x_axis_label="X (A --> P)",
             y_axis_label="Y (D --> V)",
             tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
+            match_aspect=True,
+            **plot_settings,
+        )
+        tau_xy = figure(
+            title="ipfx_tau in X/Y space",
+            x_axis_label="X (A --> P)",
+            y_axis_label="Y (D --> V)",
+            tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
+            match_aspect=True,
             **plot_settings,
         )
         vm = figure(
@@ -1226,11 +1485,41 @@ class RawSpikeAnalysis:
             tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
             **plot_settings,
         )
+        # Box plots: PCA1 and tau by projection target
+        box_w = 250
+        pc1_projection = figure(
+            title=f"{dim_reduction_method}1 (on normalized V) by projection target",
+            y_axis_label=f"{dim_reduction_method}1",
+            tools="",
+            toolbar_location=None,
+            width=box_w,
+            height=plot_settings["height"],
+        )
+        tau_projection = figure(
+            title="ipfx_tau by projection target",
+            y_axis_label="ipfx_tau",
+            tools="",
+            toolbar_location=None,
+            width=box_w,
+            height=plot_settings["height"],
+        )
+        pc1_histogram = figure(
+            title=f"{dim_reduction_method}1 Distribution",
+            x_axis_label=f"{dim_reduction_method}1",
+            y_axis_label="Count",
+            tools="pan,reset,wheel_zoom",
+            width=max(int(plot_settings["width"] * 0.5), 300),
+            height=plot_settings["height"],
+        )
 
         return {
             "embedding": embedding,
             "embedding_depth": embedding_depth,
             "component_y": component_y,
+            "tau_xy": tau_xy,
+            "pc1_projection": pc1_projection,
+            "tau_projection": tau_projection,
+            "pc1_histogram": pc1_histogram,
             "vm": vm,
             "vm_depth": vm_depth,
             "dvdt": dvdt,
