@@ -10,6 +10,7 @@ import panel as pn
 from bokeh.layouts import gridplot
 from bokeh.models import (
     BoxZoomTool,
+    CategoricalColorMapper,
     ColorBar,
     ColumnDataSource,
     CustomJS,
@@ -111,6 +112,11 @@ class RawSpikeAnalysis:
             "if_show_cluster_on_retro": pn.widgets.Checkbox(
                 name="Show type color for Retro",
                 value=False,
+                sizing_mode="stretch_width",
+            ),
+            "if_edge_color_projection": pn.widgets.Checkbox(
+                name="Edge color by projection target",
+                value=True,
                 sizing_mode="stretch_width",
             ),
             "marker_size": pn.widgets.IntSlider(
@@ -269,6 +275,7 @@ class RawSpikeAnalysis:
         font_size: int = 12,
         marker_size: int = 10,
         if_show_cluster_on_retro: bool = True,
+        if_edge_color_projection: bool = True,
         spike_range: tuple = (-4, 7),
         dim_reduction_method: str = "PCA",
         normalize_window_v: tuple = (-2, 4),
@@ -552,6 +559,24 @@ class RawSpikeAnalysis:
             self._add_lc_mesh_overlay(p_component_y)
             pc_values = pd.to_numeric(df_v_proj[component_col], errors="coerce")
             if pc_values.notna().any():
+                # Optionally map edge color to projection target
+                if if_edge_color_projection:
+                    regions = df_v_proj["injection region"].unique().tolist()
+                    edge_color_mapper = CategoricalColorMapper(
+                        factors=regions,
+                        palette=[
+                            REGION_COLOR_MAPPER.get(r, "black") for r in regions
+                        ],
+                    )
+                    line_color_spec = {
+                        "field": "injection region",
+                        "transform": edge_color_mapper,
+                    }
+                    line_width_spec = 1.5
+                else:
+                    line_color_spec = "black"
+                    line_width_spec = 0.5
+
                 source = ColumnDataSource(df_v_proj)
                 palette = diverging_palette(Blues256, Reds256, 256)
                 color_mapper = LinearColorMapper(
@@ -565,8 +590,8 @@ class RawSpikeAnalysis:
                     source=source,
                     size=marker_size,
                     color={"field": component_col, "transform": color_mapper},
-                    line_color="black",
-                    line_width=0.5,
+                    line_color=line_color_spec,
+                    line_width=line_width_spec,
                     alpha=0.7,
                 )
                 color_bar = ColorBar(color_mapper=color_mapper, width=8)
@@ -1301,6 +1326,7 @@ class RawSpikeAnalysis:
             x_axis_label="X (A --> P)",
             y_axis_label="Y (D --> V)",
             tools="pan,reset,tap,wheel_zoom,box_select,lasso_select",
+            match_aspect=True,
             **plot_settings,
         )
         vm = figure(
